@@ -1,4 +1,4 @@
 #!/bin/bash
 
-cmake --build build
-ctest --test-dir build --output-on-failure
+cmake --build build -j$(nproc)
+ctest --test-dir build --output-on-failure --verbose

@@ -2,4 +2,4 @@
 
 rm -rf build
 cmake -S . -B build -DBUILD_TESTS=ON
-cmake --build build
+cmake --build build -j$(nproc)
