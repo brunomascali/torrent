@@ -1,7 +1,8 @@
 find_package(GTest REQUIRED)
 
 add_executable(bencode_test
-    bencode.cxx
+    decode.cxx
+    encode.cxx
 )
 
 target_link_libraries(bencode_test

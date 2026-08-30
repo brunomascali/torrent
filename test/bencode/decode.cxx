@@ -5,8 +5,10 @@
 
 #include <bencode/decode.hxx>
 
+namespace {
 std::span<const std::byte> as_bytes(std::string_view str) {
   return {reinterpret_cast<const std::byte *>(str.data()), str.size()};
+}
 }
 
 // ==========================================
@@ -52,17 +54,16 @@ TEST(BencodeDecoderTest, ParsesLists) {
   EXPECT_EQ(std::get<bencode::Integer>((list)[2].data), 42);
 }
 
-// TEST(BencodeDecoderTest, ParsesDictionaries) {
-//   // {"bar": "spam", "foo": 42}
-//   auto res = bencode::Decoder::decode(as_bytes("d3:bar4:spam3:fooi42ee"));
-//   ASSERT_TRUE(res.has_value());
+TEST(BencodeDecoderTest, ParsesDictionaries) {
+  // {"bar": "spam", "foo": 42}
+  auto res = bencode::decode(as_bytes("d3:bar4:spam3:fooi42ee"));
+  ASSERT_TRUE(res.has_value());
 
-//   auto *dict_val = boost::get<bencode::Dict>(&res.value());
+  auto dict = std::get<bencode::Dict>(res.value().data);
 
-//   auto foo_val = dict_val->get("foo");
-//   ASSERT_TRUE(foo_val.has_value());
-//   EXPECT_EQ(*boost::get<int64_t>(&foo_val.value()), 42);
-// }
+  ASSERT_TRUE(dict.contains("foo"));
+  EXPECT_EQ(std::get<bencode::Integer>(dict["foo"].data),  42);
+}
 
 TEST(BencodeDecoderTest, RejectsMalformedData) {
   EXPECT_FALSE(bencode::decode(as_bytes("i42")).has_value());

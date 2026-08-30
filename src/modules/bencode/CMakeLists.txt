@@ -1,5 +1,6 @@
 add_library(bencode STATIC
     decode.cxx
+    encode.cxx
 )
 
 target_include_directories(bencode PUBLIC

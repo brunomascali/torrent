@@ -15,6 +15,7 @@ std::expected<bencode::Value, bencode::Error> decode_(std::span<const std::byte>
 std::expected<bencode::Integer, bencode::Error> decode_int(std::span<const std::byte> buffer, size_t &i);
 std::expected<bencode::ByteString, bencode::Error> decode_bytestring(std::span<const std::byte> buffer, size_t &i);
 std::expected<bencode::List, bencode::Error> decode_list(std::span<const std::byte> buffer, size_t &i);
+std::expected<bencode::Dict, bencode::Error> decode_dict(std::span<const std::byte> buffer, size_t &i);
 
 bencode::Error bencode_err(BencodeErrorCode ec, size_t index);
 
@@ -32,6 +33,8 @@ std::expected<bencode::Value, bencode::Error> decode_(std::span<const std::byte>
   }
   if (buffer[i] == std::byte{'l'})
     return decode_list(buffer, i);
+  if (buffer[i] == std::byte{'d'})
+    return decode_dict(buffer, i);
   else {
     auto missing_starting_char =
         bencode::Error(BencodeErrorCode::missing_starting_character,
@@ -121,6 +124,39 @@ std::expected<bencode::List, bencode::Error> decode_list(std::span<const std::by
 
   i += 1;
   return list;
+}
+
+std::expected<bencode::Dict, bencode::Error> decode_dict(std::span<const std::byte> buffer, size_t &i) {
+  bencode::Dict dict;
+
+  i += 1;
+
+  while (i < buffer.size() && buffer[i] != std::byte{'e'}) {
+    if (!std::isdigit(static_cast<unsigned char>(buffer[i]))) {
+      return std::unexpected(bencode_err(BencodeErrorCode::missing_starting_character, i));
+    }
+
+    auto key = decode_bytestring(buffer, i);
+    if (!key.has_value())
+      return std::unexpected(key.error());
+
+    if (i >= buffer.size()) {
+      return std::unexpected(bencode_err(BencodeErrorCode::missing_terminator, i));
+    }
+
+    auto value = decode_(buffer, i);
+    if (!value.has_value())
+      return std::unexpected(value.error());
+
+    dict.emplace(std::move(key.value()), std::move(value.value()));
+  }
+
+  if (i >= buffer.size() || buffer[i] != std::byte{'e'}) {
+    return std::unexpected(bencode_err(BencodeErrorCode::missing_terminator, i));
+  }
+
+  i += 1;
+  return dict;
 }
 
 bencode::Error bencode_err(BencodeErrorCode ec, size_t index) {
