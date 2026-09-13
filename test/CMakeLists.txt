@@ -12,3 +12,4 @@ include(GoogleTest)
 
 add_subdirectory(io)
 add_subdirectory(bencode)
+add_subdirectory(metainfo)

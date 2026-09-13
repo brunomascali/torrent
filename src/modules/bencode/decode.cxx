@@ -1,12 +1,11 @@
-#include "bencode/bencode.hxx"
-#include "bencode/error.hxx"
+#include <bencode/bencode.hxx>
+#include <bencode/error.hxx>
 #include <bencode/decode.hxx>
 
 #include <cctype>
 #include <cstddef>
 #include <expected>
 #include <format>
-#include <print>
 #include <span>
 
 namespace bencode {
@@ -25,7 +24,6 @@ std::expected<bencode::Value, bencode::Error> decode(std::span<const std::byte> 
 }
 
 std::expected<bencode::Value, bencode::Error> decode_(std::span<const std::byte> buffer, size_t& i) {
-  std::println("{}", i);
   if (buffer[i] == std::byte{'i'})
     return decode_int(buffer, i);
   if (std::isdigit(static_cast<unsigned char>(buffer[i]))) {
