@@ -1,3 +1,4 @@
+#include "download/tracker.hxx"
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -47,7 +48,7 @@ protected:
 TEST_F(MultipleFileMetainfoTest, SuccessfullyReadsAnnounceUrl) {
   auto result = m_metainfo->announce();
   ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result.value(), "http://bruno.com");
+  EXPECT_EQ(result.value(), download::Tracker("http://bruno.com"));
 }
 
 TEST_F(MultipleFileMetainfoTest, SuccessfullyReadsFiles) {
@@ -62,4 +63,10 @@ TEST_F(MultipleFileMetainfoTest, SuccessfullyReadsFiles) {
   };
 
   EXPECT_EQ(result.value(), expected_files);
+}
+
+TEST_F(MultipleFileMetainfoTest, SuccessfullyReadsTotalSize) {
+  auto result = m_metainfo->total_size();
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result.value(), 20);
 }

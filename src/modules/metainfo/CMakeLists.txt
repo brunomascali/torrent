@@ -1,7 +1,7 @@
 set(TARGET_NAME metainfo)
 
 add_library(${TARGET_NAME} STATIC
-    metainfo.cxx
+  metainfo.cxx
 )
 
 target_include_directories(${TARGET_NAME} PUBLIC
@@ -12,5 +12,7 @@ target_include_directories(${TARGET_NAME} PUBLIC
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_23)
 
 target_link_libraries(${TARGET_NAME} PRIVATE
-    error
+  error
+  bencode
+  download
 )

@@ -1,3 +1,4 @@
+#include "download/tracker.hxx"
 #include <bencode/bencode.hxx>
 #include <bencode/encode.hxx>
 #include <boost/uuid/detail/sha1.hpp>
@@ -10,8 +11,10 @@
 namespace metainfo {
 Metainfo::Metainfo(const bencode::Value &bencode) : m_bencode(bencode) {}
 
-std::expected<std::string, metainfo::Error> Metainfo::announce() const {
-  return get_field<bencode::ByteString>("announce");
+std::expected<download::Tracker, metainfo::Error> Metainfo::announce() const {
+  return get_field<bencode::ByteString>("announce")
+      .transform(
+          [](bencode::ByteString url) { return download::Tracker(url); });
 }
 
 std::expected<std::string, metainfo::Error> Metainfo::name() const {
@@ -68,6 +71,24 @@ std::expected<std::vector<File>, metainfo::Error> Metainfo::files() const {
   return files;
 }
 
+std::expected<int64_t, metainfo::Error> Metainfo::total_size() const {
+  auto len = length();
+  if (len.has_value()) {
+    return len.value();
+  }
+
+  auto file_list = files();
+  if (!file_list.has_value()) {
+    return std::unexpected(file_list.error());
+  }
+
+  int64_t total = 0;
+  for (const auto &file : file_list.value()) {
+    total += file.length;
+  }
+  return total;
+}
+
 std::expected<bencode::ByteString, metainfo::Error>
 Metainfo::info_hash() const {
   if (!m_info_hash.has_value()) {
@@ -81,16 +102,20 @@ Metainfo::info_hash() const {
     boost::uuids::detail::sha1 sha1;
     sha1.process_bytes(info_str.data(), info_str.size());
 
-    unsigned char digest[20];
+    boost::uuids::detail::sha1::digest_type digest;
     sha1.get_digest(digest);
 
     bencode::ByteString hash_bytes;
-    hash_bytes.reserve(20);
-    for (unsigned int word : digest) {
-      hash_bytes.push_back(static_cast<char>((word >> 24) & 0xFF));
-      hash_bytes.push_back(static_cast<char>((word >> 16) & 0xFF));
-      hash_bytes.push_back(static_cast<char>((word >> 8) & 0xFF));
-      hash_bytes.push_back(static_cast<char>(word & 0xFF));
+    if constexpr (sizeof(digest) == 20 && sizeof(digest[0]) == 1) {
+      hash_bytes.assign(reinterpret_cast<const char *>(digest), 20);
+    } else {
+      hash_bytes.reserve(20);
+      for (unsigned int word : digest) {
+        hash_bytes.push_back(static_cast<char>((word >> 24) & 0xFF));
+        hash_bytes.push_back(static_cast<char>((word >> 16) & 0xFF));
+        hash_bytes.push_back(static_cast<char>((word >> 8) & 0xFF));
+        hash_bytes.push_back(static_cast<char>(word & 0xFF));
+      }
     }
 
     return hash_bytes;

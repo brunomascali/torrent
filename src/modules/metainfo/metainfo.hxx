@@ -1,5 +1,6 @@
 #pragma once
 
+#include <download/tracker.hxx>
 #include <bencode/bencode.hxx>
 #include <filesystem>
 #include <metainfo/error.hxx>
@@ -23,7 +24,7 @@ class Metainfo {
 public:
   explicit Metainfo(const bencode::Value &bencode);
 
-  std::expected<bencode::ByteString, metainfo::Error> announce() const;
+  std::expected<download::Tracker, metainfo::Error> announce() const;
 
   std::expected<bencode::ByteString, metainfo::Error> name() const;
 
@@ -34,6 +35,8 @@ public:
   std::expected<bencode::ByteString, metainfo::Error> pieces() const;
 
   std::expected<std::vector<File>, metainfo::Error> files() const;
+
+  std::expected<int64_t, metainfo::Error> total_size() const;
 
   std::expected<std::string, metainfo::Error> info_hash() const;
 
