@@ -3,6 +3,7 @@ add_subdirectory(modules/io)
 add_subdirectory(modules/bencode)
 add_subdirectory(modules/metainfo)
 add_subdirectory(modules/download)
+add_subdirectory(modules/logger)
 
 add_library(${PROJECT_NAME} INTERFACE)
 
@@ -11,4 +12,8 @@ target_link_libraries(${PROJECT_NAME} INTERFACE
   io
   bencode
   download
+  logger
 )
+
+add_executable(main main.cpp)
+target_link_libraries(main PRIVATE ${PROJECT_NAME})

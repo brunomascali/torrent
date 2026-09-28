@@ -3,6 +3,7 @@
 #include <format>
 #include <print>
 #include <expected>
+#include <download/http_announce.hxx>
 
 namespace download {
 
@@ -11,7 +12,7 @@ namespace download {
   Tracker::Tracker(std::string url)
     : m_url(std::move(url)) {}
 
-  std::expected<HttpAnnounceResponse, std::string> Tracker::announce(const HttpAnnounceRequest& req) {
+  std::expected<HttpAnnounceResponse, std::string> Tracker::announce(HttpAnnounceRequest req) {
     if (m_url.empty()) {
       return std::unexpected("Tracker does not have a url");
     }

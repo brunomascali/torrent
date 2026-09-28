@@ -27,7 +27,7 @@ std::string to_compact_peer(const std::string& ip_str, uint16_t port) {
 
 std::string make_compact_tracker_response(
     int64_t interval,
-    const std::vector<download::Peer>& peers,
+    const std::vector<download::peer::Peer>& peers,
     std::optional<int64_t> complete = std::nullopt,
     std::optional<int64_t> incomplete = std::nullopt) {
   bencode::Dict dict;
@@ -47,7 +47,7 @@ std::string make_compact_tracker_response(
 
 std::string make_dict_tracker_response(
     int64_t interval,
-    const std::vector<download::Peer>& peers,
+    const std::vector<download::peer::Peer>& peers,
     std::optional<int64_t> complete = std::nullopt,
     std::optional<int64_t> incomplete = std::nullopt) {
   bencode::Dict dict;
@@ -89,7 +89,7 @@ protected:
   void SetUp() override {
     // 1. Compact peers route
     svr.Get("/announce_compact", [](const httplib::Request&, httplib::Response& res) {
-      std::vector<download::Peer> peers = {
+      std::vector<download::peer::Peer> peers = {
         {.peer_id = std::nullopt, .ip = "127.0.0.1", .port = 6881},
         {.peer_id = std::nullopt, .ip = "192.168.1.50", .port = 8080}
       };
@@ -99,7 +99,7 @@ protected:
 
     // 2. Dictionary list peers route
     svr.Get("/announce_dict", [](const httplib::Request&, httplib::Response& res) {
-      std::vector<download::Peer> peers = {
+      std::vector<download::peer::Peer> peers = {
         {.peer_id = "-TR2940-peer12345678", .ip = "127.0.0.1", .port = 6881},
         {.peer_id = "-TR2940-peer87654321", .ip = "10.0.0.1", .port = 51413}
       };

@@ -6,6 +6,7 @@
 #include <metainfo/metainfo.hxx>
 #include <gtest/gtest.h>
 #include <boost/asio/ip/address.hpp>
+#include <download/http_announce.hxx>
 
 class HttpAnnounceTest : public ::testing::Test {
 protected:

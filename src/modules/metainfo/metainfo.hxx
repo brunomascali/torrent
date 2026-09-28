@@ -40,6 +40,9 @@ public:
 
   std::expected<std::string, metainfo::Error> info_hash() const;
 
+  // Helper functions
+  std::expected<uint64_t, metainfo::Error> num_pieces() const;
+
 private:
   const bencode::Value &m_bencode;
   std::optional<bencode::ByteString> m_info_hash;

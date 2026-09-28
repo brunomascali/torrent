@@ -8,6 +8,18 @@
 
 namespace download {
 
+HttpAnnounceRequest HttpAnnounceRequest::build_request(const download::DownloadManager& manager) {
+  return HttpAnnounceRequest{
+    .info_hash = std::string(manager.info_hash()),
+    .peer_id = "-TR2940-123456789012",
+    .ip = std::nullopt,
+    .port = 6881,
+    .uploaded = manager.uploaded(),
+    .downloaded = manager.downloaded(),
+    .left = manager.left(),
+  };
+}
+
 std::string HttpAnnounceRequest::encode_params() const {
   std::string url{};
 
@@ -113,7 +125,7 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
       const auto* p = reinterpret_cast<const uint8_t*>(compact_peers.data() + i * 6);
       std::string ip = std::format("{}.{}.{}.{}", p[0], p[1], p[2], p[3]);
       uint16_t port = (static_cast<uint16_t>(p[4]) << 8) | static_cast<uint16_t>(p[5]);
-      success.peers.push_back(Peer{
+      success.peers.push_back(download::peer::Peer{
         .peer_id = std::nullopt,
         .ip = std::move(ip),
         .port = port,
@@ -140,7 +152,7 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
         return std::unexpected("Missing or invalid 'port' in peer dictionary");
       }
 
-      Peer peer{
+      download::peer::Peer peer{
         .peer_id = std::nullopt,
         .ip = std::get<bencode::ByteString>(ip_it->second.data),
         .port = static_cast<uint16_t>(std::get<bencode::Integer>(port_it->second.data)),
@@ -204,7 +216,7 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
             ip += std::format("{:x}", group);
           }
           uint16_t port = (static_cast<uint16_t>(p[16]) << 8) | static_cast<uint16_t>(p[17]);
-          success.peers.push_back(Peer{
+          success.peers.push_back(download::peer::Peer{
             .peer_id = std::nullopt,
             .ip = std::move(ip),
             .port = port,

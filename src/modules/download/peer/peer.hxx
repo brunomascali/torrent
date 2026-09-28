@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-namespace download {
+namespace download::peer {
   struct Peer {
     std::optional<std::string> peer_id;
     std::string ip;

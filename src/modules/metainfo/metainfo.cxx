@@ -2,6 +2,7 @@
 #include <bencode/bencode.hxx>
 #include <bencode/encode.hxx>
 #include <boost/uuid/detail/sha1.hpp>
+#include <cmath>
 #include <cstdint>
 #include <expected>
 #include <metainfo/error.hxx>
@@ -122,6 +123,17 @@ Metainfo::info_hash() const {
   }
 
   return m_info_hash.value();
+}
+
+std::expected<uint64_t, metainfo::Error> Metainfo::num_pieces() const {
+  auto length = this->length();
+  auto piece_length = this->piece_length();
+
+  if (!length || !piece_length) {
+    return std::unexpected(length.error());
+  }
+
+  return static_cast<uint64_t>(std::ceil(static_cast<double>(*length) / static_cast<double>(*piece_length)));
 }
 
 } // namespace metainfo

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "download/download_manager.hxx"
 #include <bencode/bencode.hxx>
 #include <cstdint>
 #include <expected>
@@ -8,7 +9,7 @@
 #include <string_view>
 #include <variant>
 #include <vector>
-#include <download/peer.hxx>
+#include <download/peer/peer.hxx>
 
 namespace download {
 
@@ -24,12 +25,13 @@ struct HttpAnnounceRequest {
   uint64_t left;
   // Event event
 
+  [[nodiscard]] static HttpAnnounceRequest build_request(const download::DownloadManager& manager);
   [[nodiscard]] std::string encode_params() const;
 };
 
 struct HttpAnnounceResponseSuccess {
   int64_t interval{0};
-  std::vector<Peer> peers;
+  std::vector<download::peer::Peer> peers;
   std::optional<int64_t> min_interval;
   std::optional<std::string> tracker_id;
   std::optional<int64_t> complete;
