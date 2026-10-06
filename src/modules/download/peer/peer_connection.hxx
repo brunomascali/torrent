@@ -3,6 +3,7 @@
 #include "download/peer/peer.hxx"
 #include "download/peer/message.hxx"
 #include "io/tcp_connection.hxx"
+#include <map>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -37,21 +38,21 @@ namespace download::peer {
       asio::awaitable<void> main_loop();
       asio::awaitable<std::expected<void, std::string>> handshake(const std::string& info_hash);
 
-      void handle_msg(const Choke&);
-      void handle_msg(const Unchoke&);
-      void handle_msg(const Interested&);
-      void handle_msg(const NotInterested&);
-      void handle_msg(const Have&);
-      void handle_msg(const Bitfield&);
-      void handle_msg(const Request&);
-      void handle_msg(const Piece&);
-      void handle_msg(const Cancel&);
-      void handle_msg(const KeepAlive&);
+      asio::awaitable<void> handle_msg(const Choke&);
+      asio::awaitable<void> handle_msg(const Unchoke&);
+      asio::awaitable<void> handle_msg(const Interested&);
+      asio::awaitable<void> handle_msg(const NotInterested&);
+      asio::awaitable<void> handle_msg(const Have&);
+      asio::awaitable<void> handle_msg(const Bitfield&);
+      asio::awaitable<void> handle_msg(const Request&);
+      asio::awaitable<void> handle_msg(const Piece&);
+      asio::awaitable<void> handle_msg(const Cancel&);
+      asio::awaitable<void> handle_msg(const KeepAlive&);
 
       std::vector<std::byte> create_handshake_message(const std::string& info_hash);
 
       asio::awaitable<std::expected<PeerMessage, std::string>> receive_message();
-      bool send_message(const PeerMessage& message);
+      asio::awaitable<bool> send_message(const PeerMessage& message);
 
   };
 }

@@ -52,23 +52,49 @@ asio::awaitable<void> PeerConnection::main_loop() {
       co_return;
     }
 
-    std::visit([&](const auto &m) { handle_msg(m); }, *msg);
+    co_await std::visit(
+        [this](const auto &m) -> asio::awaitable<void> {
+          co_return co_await handle_msg(m);
+        },
+        *msg);
   }
 }
 
-void PeerConnection::handle_msg(const KeepAlive &) {}
+asio::awaitable<void> PeerConnection::handle_msg(const KeepAlive &) {
+  co_return;
+}
 
-void PeerConnection::handle_msg(const Choke &) {}
+asio::awaitable<void> PeerConnection::handle_msg(const Choke &) { co_return; }
 
-void PeerConnection::handle_msg(const Unchoke &) {}
+asio::awaitable<void> PeerConnection::handle_msg(const Unchoke &) {
+  m_choked = true;
 
-void PeerConnection::handle_msg(const Interested &) {}
+  logger::debug("Received unchoke");
 
-void PeerConnection::handle_msg(const NotInterested &) {}
+  auto piece = m_download_manager_ref.reserve_piece(m_bitfield);
 
-void PeerConnection::handle_msg(const Have &) {}
+  if (piece) {
+    logger::debug("Requesting piece {}", *piece);
+    for (int offset = 0; offset < m_download_manager_ref.metainfo().piece_length().value(); offset += 16 * 1024) {
+      PeerMessage request = Request(*piece, offset, 16 * 1024);
+      co_await m_tcp_connection->async_write(request.to_bytes());
+    }
+  }
 
-void PeerConnection::handle_msg(const Bitfield &bitfield) {
+  co_return;
+}
+
+asio::awaitable<void> PeerConnection::handle_msg(const Interested &) {
+  co_return;
+}
+
+asio::awaitable<void> PeerConnection::handle_msg(const NotInterested &) {
+  co_return;
+}
+
+asio::awaitable<void> PeerConnection::handle_msg(const Have &) { co_return; }
+
+asio::awaitable<void> PeerConnection::handle_msg(const Bitfield &bitfield) {
   logger::trace("Received bitfield of size {}", bitfield.mask.size());
 
   int64_t pieces_encoded_in_bitfield =
@@ -83,17 +109,30 @@ void PeerConnection::handle_msg(const Bitfield &bitfield) {
   }
 
   m_bitfield = std::move(bitfield.mask);
+
+  auto send = co_await send_message(Interested{});
+  if (!send) {
+    logger::warn("Error sending Interested message");
+  }
+
+  co_return;
 }
 
-void PeerConnection::handle_msg(const Request &) {}
+asio::awaitable<void> PeerConnection::handle_msg(const Request &) { co_return; }
 
-void PeerConnection::handle_msg(const Piece &) {}
+asio::awaitable<void> PeerConnection::handle_msg(const Piece &piece) {
+  logger::debug("Piece {} {} received", piece.index, piece.begin);
 
-void PeerConnection::handle_msg(const Cancel &) {}
+  co_return;
+}
 
-asio::awaitable<std::expected<void, std::string>> PeerConnection::handshake(const std::string &info_hash) {
+asio::awaitable<void> PeerConnection::handle_msg(const Cancel &) { co_return; }
+
+asio::awaitable<std::expected<void, std::string>>
+PeerConnection::handshake(const std::string &info_hash) {
   auto handshake_request = HandshakeMessage::as_bytes(info_hash);
-  auto handshake_response = co_await m_tcp_connection->async_write(handshake_request);
+  auto handshake_response =
+      co_await m_tcp_connection->async_write(handshake_request);
 
   if (!handshake_response.has_value()) {
     co_return std::unexpected("Failed writing to peer socket");
@@ -106,8 +145,9 @@ asio::awaitable<std::expected<void, std::string>> PeerConnection::handshake(cons
   }
 
   if (response->size() != 68 ||
-      !std::equal(handshake_request.begin() + 28, handshake_request.begin() + 48,
-                  response->begin() + 28, response->begin() + 48)) {
+      !std::equal(handshake_request.begin() + 28,
+                  handshake_request.begin() + 48, response->begin() + 28,
+                  response->begin() + 48)) {
     co_return std::unexpected("request != response (handshake)");
   }
 
@@ -171,5 +211,11 @@ PeerConnection::receive_message() {
   co_return PeerMessage::from_bytes(*id, *payload);
 }
 
-bool PeerConnection::send_message(const PeerMessage &message) { return false; }
+asio::awaitable<bool> PeerConnection::send_message(const PeerMessage &message) {
+  logger::debug("Sending message: {}", message.index());
+  auto sent = co_await m_tcp_connection->async_write(message.to_bytes());
+
+  co_return sent.has_value();
+}
+
 } // namespace download::peer

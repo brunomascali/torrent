@@ -28,7 +28,7 @@ struct Bitfield {
 struct Request {
   uint32_t index;
   uint32_t begin;
-  uint32_t offset;
+  uint32_t length;
 };
 struct Piece {
   uint32_t index;
@@ -67,7 +67,7 @@ struct PeerMessage : public message_variants {
     case std::byte{6}:
       return Request{.index = extract_u32(payload, 0),
                      .begin = extract_u32(payload, 4),
-                     .offset = extract_u32(payload, 8)};
+                     .length = extract_u32(payload, 8)};
     case std::byte{7}:
       return Piece{.index = extract_u32(payload),
                    .begin = extract_u32(payload, 4),
@@ -81,58 +81,65 @@ struct PeerMessage : public message_variants {
     throw std::logic_error("invalid id received from peer");
   }
 
-//     std::span<std::byte> into_bytes() const {
-//         auto make_length_prefixed_message = [] (uint8_t id, std::span<const std::byte> payload = {}) {
-//           std::vector<std::byte> msg;
-//           uint32_t len = static_cast<uint32_t>(1 + payload.size());
-//
-//           // length prefix, big-endian
-//           msg.push_back(std::byte{static_cast<unsigned char>((len >> 24) &
-//           0xFF)}); msg.push_back(std::byte{static_cast<unsigned char>((len >>
-//           16) & 0xFF)}); msg.push_back(std::byte{static_cast<unsigned
-//           char>((len >> 8) & 0xFF)});
-//           msg.push_back(std::byte{static_cast<unsigned char>(len & 0xFF)});
-//
-//           msg.push_back(std::byte{id});
-//           msg.insert(msg.end(), payload.begin(), payload.end());
-//
-//           return msg;
-//         };
-//
-//         return std::visit(overloaded{
-//             [&](const Choke&) {
-//                 return make_length_prefixed_message(0);
-//             },
-//             [&](const Unchoke&) {
-//                 return make_length_prefixed_message(1);
-//             },
-//             [&](const Interested&) {
-//                 return make_length_prefixed_message(2);
-//             },
-//             [&](const Have& h) {
-//                 std::vector<std::byte> payload = u32_to_bytes(h.index);
-//                 return make_length_prefixed_message(4, payload);
-//             },
-//             [&](const Bitfield& b) {
-//                 return make_length_prefixed_message(5, b.mask);
-//             },
-//             [&](const Request& r) {
-//                 std::vector<std::byte> payload;
-//                 append_u32(payload, r.index);
-//                 append_u32(payload, r.begin);
-//                 append_u32(payload, r.offset);
-//                 return make_length_prefixed_message(6, payload);
-//             },
-//             [&](const Piece& p) {
-//                 std::vector<std::byte> payload;
-//                 append_u32(payload, p.index);
-//                 append_u32(payload, p.begin);
-//                 payload.insert(payload.end(), p.block.begin(),
-//                 p.block.end()); return make_length_prefixed_message(7,
-//                 payload);
-//             }
-//         }, *this);
-//     }
+  std::vector<std::byte> to_bytes() const {
+      return std::visit(overloaded{
+          [](const KeepAlive&) -> std::vector<std::byte> {
+              return {std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}};
+          },
+          [](const Choke&) {
+              return make_message(0);
+          },
+          [](const Unchoke&) {
+              return make_message(1);
+          },
+          [](const Interested&) {
+              return make_message(2);
+          },
+          [](const NotInterested&) {
+              return make_message(3);
+          },
+          [](const Have& h) {
+              std::vector<std::byte> payload;
+              append_u32(payload, h.index);
+              return make_message(4, payload);
+          },
+          [](const Bitfield& b) {
+              return make_message(5, b.mask);
+          },
+          [](const Request& r) {
+              std::vector<std::byte> payload;
+              append_u32(payload, r.index);
+              append_u32(payload, r.begin);
+              append_u32(payload, r.length);
+              return make_message(6, payload);
+          },
+          [](const Piece& p) {
+              std::vector<std::byte> payload;
+              append_u32(payload, p.index);
+              append_u32(payload, p.begin);
+              payload.insert(payload.end(), p.block.begin(), p.block.end());
+              return make_message(7, payload);
+          },
+          [](const Cancel& c) {
+              std::vector<std::byte> payload;
+              append_u32(payload, c.index);
+              append_u32(payload, c.begin);
+              append_u32(payload, c.offset);
+              return make_message(8, payload);
+          }
+      }, *this);
+  }
+
+  static std::vector<std::byte> make_message(uint8_t id, std::span<const std::byte> payload = {}) {
+      std::vector<std::byte> msg;
+      uint32_t len = static_cast<uint32_t>(1 + payload.size());
+
+      append_u32(msg, len);
+      msg.push_back(std::byte{id});
+      msg.insert(msg.end(), payload.begin(), payload.end());
+
+      return msg;
+  }
 };
 
 } // namespace download::peer

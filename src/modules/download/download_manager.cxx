@@ -13,6 +13,8 @@ DownloadManager::DownloadManager(
     : m_metainfo(std::move(metainfo)) {
   m_left = m_metainfo->total_size().value();
   m_tracker = Tracker(m_metainfo->announce().value());
+  m_pieces_downloaded = std::vector<bool>(m_metainfo->num_pieces().value(), false);
+  m_pieces_in_progress = std::vector<bool>(m_metainfo->num_pieces().value(), false);
 }
 
 void DownloadManager::start_download() {
@@ -42,6 +44,35 @@ void DownloadManager::start_download() {
   }
   for (auto &t : pool)
     t.join();
+}
+
+std::optional<uint32_t> DownloadManager::reserve_piece(const std::vector<std::byte>& peer_bitfield) {
+    std::lock_guard lock(m_piece_mutex);
+
+    for (uint32_t i = 0; i < m_pieces_downloaded.size(); ++i) {
+        if (m_pieces_downloaded[i] || m_pieces_in_progress[i]) {
+            continue;
+        }
+        if (!peer_has_piece(peer_bitfield, i)) {
+            continue;
+        }
+
+        m_pieces_in_progress[i] = true;
+        return i;
+    }
+
+    return std::nullopt;
+}
+
+void DownloadManager::release_piece(uint32_t piece_index) {
+    std::lock_guard lock(m_piece_mutex);
+    m_pieces_in_progress[piece_index] = false;
+}
+
+void DownloadManager::mark_piece_complete(uint32_t piece_index) {
+    std::lock_guard lock(m_piece_mutex);
+    m_pieces_downloaded[piece_index] = true;
+    m_pieces_in_progress[piece_index] = false;
 }
 
 std::vector<peer::Peer> DownloadManager::fetch_peers() {
@@ -76,6 +107,17 @@ std::string DownloadManager::info_hash() const {
 }
 
 asio::io_context &DownloadManager::io_context() { return m_io_context; }
+
+bool DownloadManager::peer_has_piece(const std::vector<std::byte>& bitfield, uint32_t piece_index) {
+    std::size_t byte_index = piece_index / 8;
+    std::size_t bit_index = 7 - (piece_index % 8);
+
+    if (byte_index >= bitfield.size()) {
+        return false;
+    }
+
+    return (std::to_integer<uint8_t>(bitfield[byte_index]) >> bit_index) & 1;
+}
 
 std::string get_request_params(const DownloadManager &download_manager) {
   auto x = escape_info_hash(download_manager.metainfo().info_hash().value());

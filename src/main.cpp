@@ -11,7 +11,6 @@
 
 int main() {
   logger::Logger::instance().set_sink(std::make_unique<logger::FileSink>("log.txt"));
-  logger::debug("Testando...");
 
   const char *project_root = std::getenv("TEST_TORRENTS_DIR");
   std::filesystem::path torrent_path =

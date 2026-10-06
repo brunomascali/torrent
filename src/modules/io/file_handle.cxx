@@ -75,8 +75,6 @@ std::expected<void, io::Error> FileHandle::flush() {
         Error{io::IOErrorCode::flush_failure, m_path.string() + ": not open"});
   }
 
-  // fsync asks the OS kernel to flush all pending in-memory modifications
-  // for this specific file descriptor down to the actual hardware.
   if (::fsync(m_fd) == -1) {
     return std::unexpected(Error::errno_to_error(m_path.string()));
   }

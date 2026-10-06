@@ -17,6 +17,10 @@ public:
 
   void start_download();
 
+  std::optional<uint32_t> reserve_piece(const std::vector<std::byte>& peer_bitfield);
+  void release_piece(uint32_t piece_index);
+  void mark_piece_complete(uint32_t piece_index);
+
   const metainfo::Metainfo& metainfo() const;
 
   uint64_t uploaded() const;
@@ -32,12 +36,17 @@ private:
   uint64_t m_downloaded{0};
   uint64_t m_left{0};
 
+  std::mutex m_piece_mutex;
+  std::vector<bool> m_pieces_downloaded;
+  std::vector<bool> m_pieces_in_progress;
+
   Tracker m_tracker{};
   asio::io_context m_io_context;
   std::vector<std::unique_ptr<peer::PeerConnection>> m_peer_connections{};
   std::mutex m_mutex;
 
   std::vector<peer::Peer> fetch_peers();
+  bool peer_has_piece(const std::vector<std::byte>& bitfield, uint32_t piece_index);
 };
 
 std::string get_request_params(const DownloadManager& download_manager);
