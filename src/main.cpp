@@ -9,13 +9,16 @@
 #include <memory>
 #include <print>
 
-int main() {
+int main(int argc, char** argv) {
   logger::Logger::instance().set_sink(std::make_unique<logger::FileSink>("log.txt"));
 
-  const char *project_root = std::getenv("TEST_TORRENTS_DIR");
-  std::filesystem::path torrent_path =
-      std::filesystem::path(project_root) / "ubuntu-26.04-desktop-amd64.iso.torrent";
-  auto handle = io::FileHandle(torrent_path);
+  if (argc == 1) {
+    logger::error("missing .torrent file");
+    exit(1);
+  }
+
+  auto file = argv[1];
+  auto handle = io::FileHandle(file);
   handle.open();
 
   auto file_size = handle.size().value();
@@ -24,7 +27,7 @@ int main() {
 
   auto decode_res = bencode::decode(buffer);
   auto m_bencode = std::make_unique<bencode::Value>(decode_res.value());
-  auto m_metainfo = std::make_unique<metainfo::Metainfo>(metainfo::Metainfo(*m_bencode));
+  auto m_metainfo = std::make_unique<metainfo::Metainfo>(metainfo::Metainfo::parse(buffer).value());
 
   auto manager = download::DownloadManager(std::move(m_metainfo));
   manager.start_download();

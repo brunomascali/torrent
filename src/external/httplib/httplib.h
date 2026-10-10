@@ -360,7 +360,6 @@ using socket_t = int;
 #include <atomic>
 #include <cassert>
 #include <chrono>
-#include <climits>
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>

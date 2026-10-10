@@ -6,6 +6,7 @@ add_library(${TARGET_NAME} STATIC
   tracker.cxx
   peer/peer.cxx
   peer/peer_connection.cxx
+  peer/message.cxx
 )
 
 target_include_directories(${TARGET_NAME} PUBLIC

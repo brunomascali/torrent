@@ -1,139 +1,125 @@
+#include "bencode/accessors.hxx"
+#include "bencode/decode.hxx"
 #include "download/tracker.hxx"
+#include "logger/logger.hxx"
 #include <bencode/bencode.hxx>
 #include <bencode/encode.hxx>
 #include <boost/uuid/detail/sha1.hpp>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <expected>
 #include <metainfo/error.hxx>
 #include <metainfo/metainfo.hxx>
 #include <print>
+#include <variant>
 
 namespace metainfo {
-Metainfo::Metainfo(const bencode::Value &bencode) : m_bencode(bencode) {}
 
-std::expected<download::Tracker, metainfo::Error> Metainfo::announce() const {
-  return get_field<bencode::ByteString>("announce")
-      .transform(
-          [](bencode::ByteString url) { return download::Tracker(url); });
-}
+namespace {
+std::string calculate_info_hash(const bencode::Dict &info) {
+  std::string info_str = bencode::encode(info);
 
-std::expected<std::string, metainfo::Error> Metainfo::name() const {
-  return get_info_field<bencode::ByteString>("name");
-}
+  boost::uuids::detail::sha1 sha1;
+  sha1.process_bytes(info_str.data(), info_str.size());
 
-std::expected<bencode::Integer, metainfo::Error> Metainfo::length() const {
-  return get_info_field<bencode::Integer>("length");
-}
+  boost::uuids::detail::sha1::digest_type digest;
+  sha1.get_digest(digest);
 
-std::expected<int64_t, metainfo::Error> Metainfo::piece_length() const {
-  return get_info_field<bencode::Integer>("piece length");
-}
-
-std::expected<bencode::ByteString, metainfo::Error> Metainfo::pieces() const {
-  return get_info_field<bencode::ByteString>("pieces");
-}
-
-std::expected<std::vector<File>, metainfo::Error> Metainfo::files() const {
-  std::vector<File> files;
-
-  auto length = this->length();
-  if (length.has_value()) {
-    auto name_opt = this->name();
-    if (!name_opt.has_value()) {
-      return std::unexpected(
-          metainfo::Error(MetainfoErrorCode::missing_key, "info.name"));
+  bencode::ByteString hash_bytes;
+  if constexpr (sizeof(digest) == 20 && sizeof(digest[0]) == 1) {
+    hash_bytes.assign(reinterpret_cast<const char *>(digest), 20);
+  } else {
+    hash_bytes.reserve(20);
+    for (unsigned int word : digest) {
+      hash_bytes.push_back(static_cast<char>((word >> 24) & 0xFF));
+      hash_bytes.push_back(static_cast<char>((word >> 16) & 0xFF));
+      hash_bytes.push_back(static_cast<char>((word >> 8) & 0xFF));
+      hash_bytes.push_back(static_cast<char>(word & 0xFF));
     }
-    files.emplace_back(name_opt.value(), length.value());
-    return files;
   }
 
-  auto file_list = get_info_field<bencode::List>("files");
-  if (!file_list) {
-    return std::unexpected(
-        metainfo::Error(MetainfoErrorCode::missing_key, "info.files"));
-  }
-
-  for (const bencode::Value &file_value : file_list.value()) {
-    auto file_dict = std::get<bencode::Dict>(file_value.data);
-
-    bencode::Integer file_length =
-        std::get<bencode::Integer>(file_dict["length"].data);
-    std::filesystem::path path;
-    auto path_list = std::get<bencode::List>(file_dict["path"].data);
-    for (const bencode::Value &path_item : path_list) {
-      auto path_piece = std::get<bencode::ByteString>(path_item.data);
-      path.append(path_piece);
-    }
-    files.emplace_back(path, file_length);
-
-    std::println("{}", files.back().path.string());
-  }
-  return files;
+  return hash_bytes;
 }
 
-std::expected<int64_t, metainfo::Error> Metainfo::total_size() const {
-  auto len = length();
-  if (len.has_value()) {
-    return len.value();
+// Todo: handle multiple file download
+std::vector<metainfo::File> extract_files(const bencode::Dict& info) {
+  auto name = bencode::get<bencode::ByteString>(info, "name");
+  if (!name) {
+    logger::error("Multiple files torrent not supported yet");
+    exit(1);
   }
 
-  auto file_list = files();
-  if (!file_list.has_value()) {
-    return std::unexpected(file_list.error());
+  auto length = bencode::get<bencode::Integer>(info, "length");
+  if (!length) {
+    logger::error("Multiple files torrent not supported yet");
+    exit(1);
   }
 
-  int64_t total = 0;
-  for (const auto &file : file_list.value()) {
-    total += file.length;
-  }
-  return total;
+  std::filesystem::path path = std::string(*name);
+  uint64_t file_length = static_cast<uint64_t>(*length);
+
+  return {
+    metainfo::File{path, file_length}
+  };
+
 }
+} // namespace
 
-std::expected<bencode::ByteString, metainfo::Error>
-Metainfo::info_hash() const {
-  if (!m_info_hash.has_value()) {
-    auto info_result = get_field<bencode::Dict>("info");
-    if (!info_result.has_value()) {
-      return std::unexpected(info_result.error());
-    }
+std::expected<Metainfo, Error> Metainfo::parse(std::span<const std::byte> torrent_bytes) {
+  Metainfo m;
 
-    std::string info_str = bencode::encode(info_result.value());
-
-    boost::uuids::detail::sha1 sha1;
-    sha1.process_bytes(info_str.data(), info_str.size());
-
-    boost::uuids::detail::sha1::digest_type digest;
-    sha1.get_digest(digest);
-
-    bencode::ByteString hash_bytes;
-    if constexpr (sizeof(digest) == 20 && sizeof(digest[0]) == 1) {
-      hash_bytes.assign(reinterpret_cast<const char *>(digest), 20);
-    } else {
-      hash_bytes.reserve(20);
-      for (unsigned int word : digest) {
-        hash_bytes.push_back(static_cast<char>((word >> 24) & 0xFF));
-        hash_bytes.push_back(static_cast<char>((word >> 16) & 0xFF));
-        hash_bytes.push_back(static_cast<char>((word >> 8) & 0xFF));
-        hash_bytes.push_back(static_cast<char>(word & 0xFF));
-      }
-    }
-
-    return hash_bytes;
+  auto bencode = bencode::decode(torrent_bytes);
+  if (!bencode) {
+    logger::error("Error decoding metainfo", bencode.error().str());
+    exit(1);
   }
 
-  return m_info_hash.value();
-}
-
-std::expected<uint64_t, metainfo::Error> Metainfo::num_pieces() const {
-  auto length = this->length();
-  auto piece_length = this->piece_length();
-
-  if (!length || !piece_length) {
-    return std::unexpected(length.error());
+  bencode::Dict* root_dict = std::get_if<bencode::Dict>(&bencode.value().data);
+  if (!root_dict) {
+    logger::error("Metainfo file is not a dictionary", bencode.error().str());
+    exit(1);
   }
 
-  return static_cast<uint64_t>(std::ceil(static_cast<double>(*length) / static_cast<double>(*piece_length)));
+  bencode::Dict* info_dict = std::get_if<bencode::Dict>(&(root_dict->at("info").data));
+  if (!info_dict) {
+    logger::error("Metainfo file does not have a 'info' dictionary", bencode.error().str());
+    exit(1);
+  }
+
+  auto length = bencode::get<bencode::Integer>(*info_dict, "length");
+  if (!length) {
+    logger::error("Metainfo file does not have a 'info.length' integer (could be a multiple files download)", bencode.error().str());
+    exit(1);
+  }
+  m.m_length = *length;
+
+  auto piece_length = bencode::get<bencode::Integer>(*info_dict, "piece length");
+  if (!piece_length) {
+    logger::error("Metainfo file does not have a 'info.piece length' integer (could be a multiple files download)", bencode.error().str());
+    exit(1);
+  }
+  m.m_piece_length = *piece_length;
+
+  auto pieces = bencode::get<bencode::ByteString>(*info_dict, "pieces");
+  if (!pieces) {
+    logger::error("Metainfo file does not have a 'info.pieces' integer", bencode.error().str());
+    exit(1);
+  }
+  m.m_pieces = std::move(*pieces);
+
+  // todo: get all trackers from metainfo
+  auto trackers = bencode::get<bencode::ByteString>(*root_dict, "announce");
+  if (!trackers) {
+    logger::error("Metainfo file does not have a 'announce' field", bencode.error().str());
+    exit(1);
+  }
+  m.m_trackers = {download::Tracker(*trackers)};
+
+  m.m_info_hash = calculate_info_hash(*info_dict);
+  m.m_files = extract_files(*info_dict);
+
+  return m;
 }
 
 } // namespace metainfo

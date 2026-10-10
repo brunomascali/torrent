@@ -19,7 +19,7 @@ namespace download::peer {
 PeerConnection::PeerConnection(const Peer &peer,
                                DownloadManager &download_manager)
     : m_download_manager_ref(download_manager), m_peer(peer) {
-  m_info_hash = m_download_manager_ref.metainfo().info_hash().value();
+  m_info_hash = m_download_manager_ref.metainfo().info_hash();
 }
 
 asio::awaitable<void> PeerConnection::prepare_connection() {
@@ -71,13 +71,14 @@ asio::awaitable<void> PeerConnection::handle_msg(const Unchoke &) {
 
   logger::debug("Received unchoke");
 
+  logger::debug("Before reserving piece bitfield: {}", m_bitfield.size());
   auto piece = m_download_manager_ref.reserve_piece(m_bitfield);
 
   if (piece) {
     logger::debug("Requesting piece {}", *piece);
-    for (int offset = 0; offset < m_download_manager_ref.metainfo().piece_length().value(); offset += 16 * 1024) {
+    for (int offset = 0; offset < m_download_manager_ref.metainfo().piece_length(); offset += 16 * 1024) {
       PeerMessage request = Request(*piece, offset, 16 * 1024);
-      co_await m_tcp_connection->async_write(request.to_bytes());
+      co_await m_tcp_connection->async_write(PeerMessage::to_bytes(request));
     }
   }
 
@@ -95,27 +96,21 @@ asio::awaitable<void> PeerConnection::handle_msg(const NotInterested &) {
 asio::awaitable<void> PeerConnection::handle_msg(const Have &) { co_return; }
 
 asio::awaitable<void> PeerConnection::handle_msg(const Bitfield &bitfield) {
-  logger::trace("Received bitfield of size {}", bitfield.mask.size());
+  logger::debug("Received bitfield of size {}", bitfield.mask.size());
+  std::size_t num_pieces = m_download_manager_ref.metainfo().num_pieces();
 
-  int64_t pieces_encoded_in_bitfield =
-      static_cast<int64_t>(bitfield.mask.size()) * 8;
-  int64_t num_pieces = m_download_manager_ref.metainfo().num_pieces().value();
-
-  if (std::abs(pieces_encoded_in_bitfield - num_pieces) >= 8) {
-    logger::error("Mismatch between pieces encoded in bitfield ({}) and pieces "
-                  "in metainfo ({})",
-                  pieces_encoded_in_bitfield, num_pieces);
-    throw std::logic_error("invalid bitfield");
+  for (std::size_t i = num_pieces; i < bitfield.mask.size(); ++i) {
+    if (bitfield.mask[i]) {
+      logger::warn("Peer set a padding bit in its bitfield");
+      break;
+    }
   }
 
-  m_bitfield = std::move(bitfield.mask);
+  logger::debug("num pieces: {}", num_pieces);
+  m_bitfield = bitfield.mask;
+  m_bitfield.resize(num_pieces);
 
-  auto send = co_await send_message(Interested{});
-  if (!send) {
-    logger::warn("Error sending Interested message");
-  }
-
-  co_return;
+  co_await send_message(Interested{});
 }
 
 asio::awaitable<void> PeerConnection::handle_msg(const Request &) { co_return; }
@@ -208,12 +203,12 @@ PeerConnection::receive_message() {
   if (!payload)
     co_return std::unexpected(payload.error());
 
-  co_return PeerMessage::from_bytes(*id, *payload);
+  co_return PeerMessage::from_bytes(*id, *payload, m_download_manager_ref.metainfo().num_pieces());
 }
 
 asio::awaitable<bool> PeerConnection::send_message(const PeerMessage &message) {
   logger::debug("Sending message: {}", message.index());
-  auto sent = co_await m_tcp_connection->async_write(message.to_bytes());
+  auto sent = co_await m_tcp_connection->async_write(PeerMessage::to_bytes(message));
 
   co_return sent.has_value();
 }

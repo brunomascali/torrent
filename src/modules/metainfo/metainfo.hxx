@@ -1,83 +1,55 @@
 #pragma once
 
-#include <download/tracker.hxx>
+
 #include <bencode/bencode.hxx>
+#include <cstdint>
+#include <download/tracker.hxx>
+#include <expected>
 #include <filesystem>
 #include <metainfo/error.hxx>
-#include <cstdint>
-#include <expected>
-#include <optional>
 #include <string>
 
 namespace metainfo {
 
 struct File {
   std::filesystem::path path;
-  int64_t length;
+  uint64_t length;
 
-  bool operator==(const File& other) const {
+  bool operator==(const File &other) const {
     return path == other.path && length == other.length;
   }
 };
 
 class Metainfo {
 public:
-  explicit Metainfo(const bencode::Value &bencode);
+  static std::expected<Metainfo, Error>
+  parse(std::span<const std::byte> torrent_bytes);
 
-  std::expected<download::Tracker, metainfo::Error> announce() const;
+  uint64_t length() const { return m_length; }
+  uint64_t piece_length() const { return m_piece_length; }
+  uint64_t num_pieces() const { return m_pieces.size() / 20; }
+  const std::string &info_hash() const { return m_info_hash; }
+  const std::vector<File>& files() const { return m_files; };
+  std::span<const std::byte, 20> piece_hash(uint32_t index) const;
+  const std::vector<download::Tracker> &trackers() const { return m_trackers; };
 
   std::expected<bencode::ByteString, metainfo::Error> name() const;
 
-  std::expected<bencode::Integer, metainfo::Error> length() const;
-
-  std::expected<bencode::Integer, metainfo::Error> piece_length() const;
-
   std::expected<bencode::ByteString, metainfo::Error> pieces() const;
-
-  std::expected<std::vector<File>, metainfo::Error> files() const;
 
   std::expected<int64_t, metainfo::Error> total_size() const;
 
-  std::expected<std::string, metainfo::Error> info_hash() const;
-
-  // Helper functions
-  std::expected<uint64_t, metainfo::Error> num_pieces() const;
-
 private:
-  const bencode::Value &m_bencode;
-  std::optional<bencode::ByteString> m_info_hash;
+  Metainfo() = default;
 
-  // Todo: return references
-  template <typename BencodeType>
-  std::expected<BencodeType, metainfo::Error>
-  get_field(const std::string &key) const {
-    auto bencode = std::get<bencode::Dict>(m_bencode.data);
-
-    if (!bencode.contains(key)) {
-      return std::unexpected(
-          metainfo::Error(MetainfoErrorCode::missing_key, key));
-    }
-
-    return std::get<BencodeType>(bencode.at(key).data);
-  }
-
-  template <typename BencodeType>
-  std::expected<BencodeType, metainfo::Error>
-  get_info_field(const std::string &key) const {
-    auto info_dict_expected = get_field<bencode::Dict>("info");
-
-    if (!info_dict_expected.has_value()) {
-      return std::unexpected(info_dict_expected.error());
-    }
-
-    const auto &info_dict = info_dict_expected.value();
-
-    if (!info_dict.contains(key)) {
-      return std::unexpected(
-          metainfo::Error(MetainfoErrorCode::missing_key, "info." + key));
-    }
-
-    return std::get<BencodeType>(info_dict.at(key).data);
-  }
+  uint64_t m_length{};
+  uint64_t m_piece_length{};
+  uint64_t m_piece_count{};
+  std::string m_pieces;
+  std::string m_info_hash;
+  std::vector<File> m_files;
+  std::vector<download::Tracker> m_trackers;
 };
+
+
 } // namespace metainfo

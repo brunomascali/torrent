@@ -31,7 +31,7 @@ namespace download::peer {
       // State
       bool m_choked{true};
       bool m_interested{false};
-      std::vector<std::byte> m_bitfield;
+      std::vector<bool> m_bitfield;
       // TCP Connection
       std::unique_ptr<io::TcpConnection> m_tcp_connection;
 

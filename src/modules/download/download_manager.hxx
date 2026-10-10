@@ -1,6 +1,5 @@
 #pragma once
 
-#include "boost/asio/io_context.hpp"
 #include <download/tracker.hxx>
 #include <download/peer/peer.hxx>
 #include <download/peer/peer_connection.hxx>
@@ -8,6 +7,8 @@
 #include <cstdint>
 #include <metainfo/metainfo.hxx>
 #include <mutex>
+
+#include <boost/asio/io_context.hpp>
 
 namespace download {
 
@@ -17,7 +18,7 @@ public:
 
   void start_download();
 
-  std::optional<uint32_t> reserve_piece(const std::vector<std::byte>& peer_bitfield);
+  std::optional<uint32_t> reserve_piece(const std::vector<bool>& peer_bitfield);
   void release_piece(uint32_t piece_index);
   void mark_piece_complete(uint32_t piece_index);
 
