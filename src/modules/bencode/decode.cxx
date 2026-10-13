@@ -24,15 +24,33 @@ std::expected<bencode::Value, bencode::Error> decode(std::span<const std::byte> 
 }
 
 std::expected<bencode::Value, bencode::Error> decode_(std::span<const std::byte> buffer, size_t& i) {
-  if (buffer[i] == std::byte{'i'})
-    return decode_int(buffer, i);
-  if (std::isdigit(static_cast<unsigned char>(buffer[i]))) {
-    return decode_bytestring(buffer, i);
+  size_t start = i;
+  std::expected<bencode::Value, bencode::Error> result;
+
+  if (buffer[i] == std::byte{'i'}) {
+    result = decode_int(buffer, i);
+    result->start = start;
+    result->end = i - 1;
+    return result;
   }
-  if (buffer[i] == std::byte{'l'})
-    return decode_list(buffer, i);
-  if (buffer[i] == std::byte{'d'})
-    return decode_dict(buffer, i);
+  if (std::isdigit(static_cast<unsigned char>(buffer[i]))) {
+    result = decode_bytestring(buffer, i);
+    result->start = start;
+    result->end = i - 1;
+    return result;
+  }
+  if (buffer[i] == std::byte{'l'}) {
+    result = decode_list(buffer, i);
+    result->start = start;
+    result->end = i - 1;
+    return result;
+  }
+  if (buffer[i] == std::byte{'d'}) {
+    result = decode_dict(buffer, i);
+    result->start = start;
+    result->end = i - 1;
+    return result;
+  }
   else {
     auto missing_starting_char =
         bencode::Error(BencodeErrorCode::missing_starting_character,

@@ -1,47 +1,25 @@
 #include "bencode/accessors.hxx"
 #include "bencode/decode.hxx"
+#include <algorithm>
+#include <crypto/sha1.hxx>
 #include "download/tracker.hxx"
 #include "logger/logger.hxx"
 #include <bencode/bencode.hxx>
 #include <bencode/encode.hxx>
 #include <boost/uuid/detail/sha1.hpp>
-#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <expected>
 #include <metainfo/error.hxx>
 #include <metainfo/metainfo.hxx>
-#include <print>
+#include <span>
 #include <variant>
+#include <ranges>
 
 namespace metainfo {
 
 namespace {
-std::string calculate_info_hash(const bencode::Dict &info) {
-  std::string info_str = bencode::encode(info);
-
-  boost::uuids::detail::sha1 sha1;
-  sha1.process_bytes(info_str.data(), info_str.size());
-
-  boost::uuids::detail::sha1::digest_type digest;
-  sha1.get_digest(digest);
-
-  bencode::ByteString hash_bytes;
-  if constexpr (sizeof(digest) == 20 && sizeof(digest[0]) == 1) {
-    hash_bytes.assign(reinterpret_cast<const char *>(digest), 20);
-  } else {
-    hash_bytes.reserve(20);
-    for (unsigned int word : digest) {
-      hash_bytes.push_back(static_cast<char>((word >> 24) & 0xFF));
-      hash_bytes.push_back(static_cast<char>((word >> 16) & 0xFF));
-      hash_bytes.push_back(static_cast<char>((word >> 8) & 0xFF));
-      hash_bytes.push_back(static_cast<char>(word & 0xFF));
-    }
-  }
-
-  return hash_bytes;
-}
-
 // Todo: handle multiple file download
 std::vector<metainfo::File> extract_files(const bencode::Dict& info) {
   auto name = bencode::get<bencode::ByteString>(info, "name");
@@ -106,7 +84,19 @@ std::expected<Metainfo, Error> Metainfo::parse(std::span<const std::byte> torren
     logger::error("Metainfo file does not have a 'info.pieces' integer", bencode.error().str());
     exit(1);
   }
-  m.m_pieces = std::move(*pieces);
+  std::string_view pieces_view = pieces.value().get();
+  if (pieces_view.size() % 20 != 0) {
+    logger::error("Pieces length is not a multiple of 20", bencode.error().str());
+    exit(1);
+  }
+  m.m_pieces.reserve(pieces_view.size() / 20);
+
+  for (std::size_t i = 0; i < pieces_view.size(); i += 20) {
+    std::array<std::byte, 20> bytes;
+    std::ranges::transform(pieces_view.substr(i, 20), bytes.begin(),
+                           [](char c) { return static_cast<std::byte>(c); });
+    m.m_pieces.push_back(bytes);
+  }
 
   // todo: get all trackers from metainfo
   auto trackers = bencode::get<bencode::ByteString>(*root_dict, "announce");
@@ -116,10 +106,16 @@ std::expected<Metainfo, Error> Metainfo::parse(std::span<const std::byte> torren
   }
   m.m_trackers = {download::Tracker(*trackers)};
 
-  m.m_info_hash = calculate_info_hash(*info_dict);
+  const bencode::Value v = root_dict->at("info");
+  logger::trace("{} -> {}", v.start, v.end);
+  m.m_info_hash = crypto::sha1({torrent_bytes.begin() + v.start, torrent_bytes.begin() + v.end + 1});
   m.m_files = extract_files(*info_dict);
 
   return m;
+}
+
+std::span<const std::byte, 20> Metainfo::piece_hash(uint32_t index) const {
+  return m_pieces[index];
 }
 
 } // namespace metainfo

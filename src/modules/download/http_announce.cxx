@@ -1,4 +1,5 @@
 #include <bencode/decode.hxx>
+#include <array>
 #include <cstdint>
 #include <format>
 #include <span>
@@ -10,8 +11,8 @@ namespace download {
 
 HttpAnnounceRequest HttpAnnounceRequest::build_request(const download::DownloadManager& manager) {
   return HttpAnnounceRequest{
-    .info_hash = std::string(manager.info_hash()),
-    .peer_id = "-TR2940-123456789012",
+    .info_hash = manager.info_hash(),
+    .peer_id = "-TR2940-614361349012",
     .ip = std::nullopt,
     .port = 6881,
     .uploaded = manager.uploaded(),
@@ -37,12 +38,13 @@ std::string HttpAnnounceRequest::encode_params() const {
   return url;
 }
 
-std::string url_encode(std::string_view data) {
+std::string url_encode(std::span<const std::byte> data) {
   std::string encoded;
   encoded.reserve(data.size() * 3);
   static constexpr char hex_chars[] = "0123456789ABCDEF";
 
-  for (unsigned char c : data) {
+  for (std::byte b : data) {
+    char c = static_cast<char>(b);
     if ((c >= 'a' && c <= 'z') ||
         (c >= 'A' && c <= 'Z') ||
         (c >= '0' && c <= '9') ||

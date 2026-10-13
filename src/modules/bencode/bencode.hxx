@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -18,6 +19,8 @@ using Dict = std::map<ByteString, Value>;
 class Value {
 public:
   std::variant<Integer, ByteString, List, Dict> data;
+  size_t start;
+  size_t end;
 
   Value() = default;
   Value(Integer i) : data(i) {}

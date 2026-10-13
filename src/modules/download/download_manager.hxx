@@ -21,13 +21,14 @@ public:
   std::optional<uint32_t> reserve_piece(const std::vector<bool>& peer_bitfield);
   void release_piece(uint32_t piece_index);
   void mark_piece_complete(uint32_t piece_index);
+  bool verify_piece_hash(uint32_t index, std::span<const std::byte> data) const;
 
   const metainfo::Metainfo& metainfo() const;
 
   uint64_t uploaded() const;
   uint64_t downloaded() const;
   uint64_t left() const;
-  std::string info_hash() const;
+  std::array<std::byte, 20> info_hash() const;
 
   asio::io_context& io_context();
 
@@ -51,6 +52,7 @@ private:
 };
 
 std::string get_request_params(const DownloadManager& download_manager);
-std::string escape_info_hash(const bencode::ByteString& info_hash);
+std::string escape_info_hash(std::span<const std::byte, 20> info_hash);
+
 
 } // namespace download

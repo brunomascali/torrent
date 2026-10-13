@@ -1,39 +1,40 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstddef>
+#include <span>
 #include <string_view>
-#include <array>
 
 namespace download::peer {
-  struct HandshakeMessage {
-    static std::array<std::byte, 68> as_bytes(std::string_view info_hash) {
-        constexpr std::string_view pstr = "BitTorrent protocol";
-        constexpr std::string_view peer_id = "12312412312315123512";
 
-        std::array<std::byte, 68> handshake_msg{};
-        auto it = handshake_msg.begin();
+struct HandshakeMessage {
+  static constexpr std::string_view pstr = "BitTorrent protocol";
 
-        // pstrlen
-        *it++ = std::byte{static_cast<unsigned char>(pstr.size())};
+  static std::array<std::byte, 68>
+  as_bytes(std::span<const std::byte, 20> info_hash,
+           std::span<const std::byte, 20> peer_id) {
+    std::array<std::byte, 68> msg{};
+    auto it = msg.begin();
 
-        // pstr
-        it = std::transform(pstr.begin(), pstr.end(), it,
-                             [](char c) { return std::byte{static_cast<unsigned char>(c)}; });
+    // pstrlen
+    *it++ = static_cast<std::byte>(pstr.size());
 
-        // reserved (8 bytes, all zero)
-        it = std::fill_n(it, 8, std::byte{0});
+    // pstr
+    it = std::ranges::transform(pstr, it, [](char c) {
+           return static_cast<std::byte>(c);
+         }).out;
 
-        // info_hash (20 bytes)
-        it = std::transform(info_hash.begin(), info_hash.end(), it,
-                             [](char c) { return std::byte{static_cast<unsigned char>(c)}; });
+    // reserved (8 bytes, already zero)
+    it += 8;
 
-        // peer_id (20 bytes)
-        it = std::transform(peer_id.begin(), peer_id.end(), it,
-                             [](char c) { return std::byte{static_cast<unsigned char>(c)}; });
+    // info_hash and peer_id: plain byte copies
+    it = std::ranges::copy(info_hash, it).out;
+    std::ranges::copy(peer_id, it);
 
-        return handshake_msg;
-    }
-  };
-}
+    return msg;
+  }
+};
+
+} // namespace download::peer

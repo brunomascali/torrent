@@ -1,6 +1,5 @@
 #include <bencode/accessors.hxx>
-#include "bencode/encode.hxx"
-#include "boost/uuid/detail/sha1.hpp"
+#include "crypto/sha1.hxx"
 #include "download/peer/peer.hxx"
 #include "download/tracker.hxx"
 #include "logger/logger.hxx"
@@ -53,9 +52,8 @@ void DownloadManager::start_download() {
 }
 
 std::optional<uint32_t> DownloadManager::reserve_piece(const std::vector<bool>& peer_bitfield) {
-
     if (peer_bitfield.size() != m_pieces_downloaded.size()) {
-      logger::warn("size(bitfield) != size(pieces)");
+      logger::warn("size(bitfield) {} != size(pieces) {}", peer_bitfield.size(), m_pieces_downloaded.size());
       return std::nullopt;
     }
     std::lock_guard lock(m_piece_mutex);
@@ -105,6 +103,12 @@ std::vector<peer::Peer> DownloadManager::fetch_peers() {
   return peers;
 }
 
+bool DownloadManager::verify_piece_hash(uint32_t index, std::span<const std::byte> data) const {
+  auto expected = metainfo().piece_hash(index);
+  auto actual = crypto::sha1(data);
+  return std::equal(expected.begin(), expected.end(), actual.begin());
+}
+
 const metainfo::Metainfo &DownloadManager::metainfo() const {
   return *m_metainfo;
 }
@@ -115,18 +119,18 @@ uint64_t DownloadManager::downloaded() const { return m_downloaded; }
 
 uint64_t DownloadManager::left() const { return m_left; }
 
-std::string DownloadManager::info_hash() const {
-  return m_metainfo->info_hash();
+std::array<std::byte, 20> DownloadManager::info_hash() const {
+  return metainfo().info_hash();
 }
 
 asio::io_context &DownloadManager::io_context() { return m_io_context; }
 
 std::string get_request_params(const DownloadManager &download_manager) {
-  auto x = escape_info_hash(download_manager.metainfo().info_hash());
+  auto x = escape_info_hash(std::span<const std::byte, 20>{download_manager.metainfo().info_hash()});
   return x;
 }
 
-std::string escape_info_hash(const bencode::ByteString &info_hash) {
+std::string escape_info_hash(std::span<const std::byte, 20> info_hash) {
   return url_encode(info_hash);
 }
 

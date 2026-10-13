@@ -13,10 +13,14 @@
 
 namespace download {
 
-std::string url_encode(std::string_view data);
+std::string url_encode(std::span<const std::byte> data);
+
+inline std::string url_encode(std::string_view text) {
+  return url_encode(std::as_bytes(std::span(text)));
+}
 
 struct HttpAnnounceRequest {
-  std::string info_hash;
+  std::array<std::byte, 20> info_hash;
   std::string peer_id;
   std::optional<std::string> ip;
   uint16_t port;

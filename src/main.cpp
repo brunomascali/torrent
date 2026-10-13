@@ -19,7 +19,11 @@ int main(int argc, char** argv) {
 
   auto file = argv[1];
   auto handle = io::FileHandle(file);
-  handle.open();
+  auto res = handle.open();
+  if (!res.has_value()) {
+    logger::error("Error creating file handle");
+    exit(1);
+  }
 
   auto file_size = handle.size().value();
   std::vector<std::byte> buffer(file_size, std::byte{0});

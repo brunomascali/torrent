@@ -12,14 +12,14 @@
 #include <expected>
 #include <iterator>
 #include <stdexcept>
+#include <utility>
 #include <variant>
 #include <vector>
 
 namespace download::peer {
 PeerConnection::PeerConnection(const Peer &peer,
                                DownloadManager &download_manager)
-    : m_download_manager_ref(download_manager), m_peer(peer) {
-  m_info_hash = m_download_manager_ref.metainfo().info_hash();
+    : m_download_manager_ref(download_manager), m_peer(peer), m_peer_id(make_peer_id()) {
 }
 
 asio::awaitable<void> PeerConnection::prepare_connection() {
@@ -32,7 +32,7 @@ asio::awaitable<void> PeerConnection::prepare_connection() {
     co_return;
   }
 
-  auto hs_result = co_await handshake(m_info_hash);
+  auto hs_result = co_await handshake(m_download_manager_ref.info_hash());
 
   if (!hs_result) {
     logger::warn("Handshake failed: {}", hs_result.error());
@@ -67,20 +67,13 @@ asio::awaitable<void> PeerConnection::handle_msg(const KeepAlive &) {
 asio::awaitable<void> PeerConnection::handle_msg(const Choke &) { co_return; }
 
 asio::awaitable<void> PeerConnection::handle_msg(const Unchoke &) {
-  m_choked = true;
+  m_choked = false;
+
+  if (m_bitfield.size() == 0)
+    co_return;
 
   logger::debug("Received unchoke");
-
-  logger::debug("Before reserving piece bitfield: {}", m_bitfield.size());
-  auto piece = m_download_manager_ref.reserve_piece(m_bitfield);
-
-  if (piece) {
-    logger::debug("Requesting piece {}", *piece);
-    for (int offset = 0; offset < m_download_manager_ref.metainfo().piece_length(); offset += 16 * 1024) {
-      PeerMessage request = Request(*piece, offset, 16 * 1024);
-      co_await m_tcp_connection->async_write(PeerMessage::to_bytes(request));
-    }
-  }
+  co_await fill_requests();
 
   co_return;
 }
@@ -116,7 +109,30 @@ asio::awaitable<void> PeerConnection::handle_msg(const Bitfield &bitfield) {
 asio::awaitable<void> PeerConnection::handle_msg(const Request &) { co_return; }
 
 asio::awaitable<void> PeerConnection::handle_msg(const Piece &piece) {
-  logger::debug("Piece {} {} received", piece.index, piece.begin);
+  auto it = m_incoming_pieces.find(piece.index);
+  if (it == m_incoming_pieces.end()) {
+    logger::warn("Block for untracked piece {}", piece.index);
+    co_return;
+  }
+
+  if (!it->second.add_chunk(piece.begin, piece.block)) {
+    // Maybe mark the piece as available again?
+    co_return;
+  }
+
+  if (it->second.all_chunks_received()) {
+    uint32_t index = piece.index;
+    auto data = std::move(it->second.data);
+    m_incoming_pieces.erase(it);
+
+    if (m_download_manager_ref.verify_piece_hash(index, data)) {
+      logger::debug("Piece {} validated. Can write to disk", index);
+    } else {
+      logger::debug("Piece {} hash != expected", index);
+    }
+
+    co_await fill_requests();
+  }
 
   co_return;
 }
@@ -124,8 +140,8 @@ asio::awaitable<void> PeerConnection::handle_msg(const Piece &piece) {
 asio::awaitable<void> PeerConnection::handle_msg(const Cancel &) { co_return; }
 
 asio::awaitable<std::expected<void, std::string>>
-PeerConnection::handshake(const std::string &info_hash) {
-  auto handshake_request = HandshakeMessage::as_bytes(info_hash);
+PeerConnection::handshake(std::span<const std::byte, 20> info_hash) {
+  auto handshake_request = HandshakeMessage::as_bytes(info_hash, m_peer_id);
   auto handshake_response =
       co_await m_tcp_connection->async_write(handshake_request);
 
@@ -186,6 +202,24 @@ PeerConnection::create_handshake_message(const std::string &info_hash) {
   return handshake_msg;
 }
 
+asio::awaitable<void> PeerConnection::fill_requests() {
+  while (m_incoming_pieces.size() < 32) {
+    auto piece = m_download_manager_ref.reserve_piece(m_bitfield);
+
+    if (piece) {
+      m_incoming_pieces.emplace(
+        std::make_pair(*piece, IncomingPiece(*piece, 262144))
+      );
+      logger::debug("Requesting piece {}", *piece);
+      for (int offset = 0; offset < m_download_manager_ref.metainfo().piece_length(); offset += 16 * 1024) {
+        PeerMessage request = Request(*piece, offset, 16 * 1024);
+        co_await m_tcp_connection->async_write(PeerMessage::to_bytes(request));
+      }
+    }
+  }
+  co_return;
+}
+
 asio::awaitable<std::expected<PeerMessage, std::string>>
 PeerConnection::receive_message() {
   auto length = co_await m_tcp_connection->async_read_u32();
@@ -211,6 +245,25 @@ asio::awaitable<bool> PeerConnection::send_message(const PeerMessage &message) {
   auto sent = co_await m_tcp_connection->async_write(PeerMessage::to_bytes(message));
 
   co_return sent.has_value();
+}
+
+std::array<std::byte, 20> make_peer_id() {
+  constexpr std::string_view prefix = "-XX0001-";
+  constexpr std::string_view alphabet =
+      "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  std::array<std::byte, 20> id{};
+  auto it = std::ranges::transform(prefix, id.begin(), [](char c) {
+              return static_cast<std::byte>(c);
+            }).out;
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<std::size_t> dist(0, alphabet.size() - 1);
+  for (; it != id.end(); ++it)
+    *it = static_cast<std::byte>(alphabet[dist(gen)]);
+
+  return id;
 }
 
 } // namespace download::peer

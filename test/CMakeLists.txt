@@ -12,5 +12,5 @@ include(GoogleTest)
 
 add_subdirectory(io)
 add_subdirectory(bencode)
-add_subdirectory(metainfo)
-add_subdirectory(download)
+# add_subdirectory(metainfo)
+# add_subdirectory(download)
