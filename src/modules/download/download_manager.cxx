@@ -3,10 +3,13 @@
 #include "download/peer/peer.hxx"
 #include "download/tracker.hxx"
 #include "logger/logger.hxx"
+#include <cstddef>
+#include <cstdint>
 #include <download/download_manager.hxx>
 #include <download/http_announce.hxx>
 #include <memory>
 #include <metainfo/metainfo.hxx>
+#include <span>
 
 namespace download {
 
@@ -103,10 +106,32 @@ std::vector<peer::Peer> DownloadManager::fetch_peers() {
   return peers;
 }
 
-bool DownloadManager::verify_piece_hash(uint32_t index, std::span<const std::byte> data) const {
+bool DownloadManager::verify_piece_hash(uint32_t index, std::span<const std::byte> bytes) const {
   auto expected = metainfo().piece_hash(index);
-  auto actual = crypto::sha1(data);
+  auto actual = crypto::sha1(bytes);
   return std::equal(expected.begin(), expected.end(), actual.begin());
+}
+
+bool DownloadManager::write_to_disk(uint32_t index, std::span<const std::byte> bytes) {
+  uint64_t piece_start = uint64_t{index} * metainfo().piece_length();
+  uint64_t piece_end = piece_start + bytes.size();
+
+  auto &file = metainfo().files().front();
+
+  if (!file.handle.is_open()) {
+    auto open = file.handle.open();
+    if (!open.has_value()) {
+      logger::error("Error opening file handle: {}", open.error().str());
+    }
+  }
+  auto write_res = file.handle.write_at(piece_start, bytes);
+
+  if (!write_res.has_value()) {
+    logger::warn("Error writing to file: {}", write_res.error().str());
+    return false;
+  }
+
+  return true;
 }
 
 const metainfo::Metainfo &DownloadManager::metainfo() const {

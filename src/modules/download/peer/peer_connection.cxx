@@ -12,6 +12,7 @@
 #include <expected>
 #include <iterator>
 #include <stdexcept>
+#include <sys/socket.h>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -120,13 +121,17 @@ asio::awaitable<void> PeerConnection::handle_msg(const Piece &piece) {
     co_return;
   }
 
+  logger::trace("Progress on {} {}", piece.index, piece.block.size());
+
   if (it->second.all_chunks_received()) {
+    logger::trace("All blocks from piece {} received", piece.index);
     uint32_t index = piece.index;
     auto data = std::move(it->second.data);
     m_incoming_pieces.erase(it);
 
     if (m_download_manager_ref.verify_piece_hash(index, data)) {
       logger::debug("Piece {} validated. Can write to disk", index);
+      m_download_manager_ref.write_to_disk(index, data);
     } else {
       logger::debug("Piece {} hash != expected", index);
     }

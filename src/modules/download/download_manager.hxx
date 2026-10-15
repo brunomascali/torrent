@@ -1,5 +1,6 @@
 #pragma once
 
+#include "download/peer/message.hxx"
 #include <download/tracker.hxx>
 #include <download/peer/peer.hxx>
 #include <download/peer/peer_connection.hxx>
@@ -21,7 +22,8 @@ public:
   std::optional<uint32_t> reserve_piece(const std::vector<bool>& peer_bitfield);
   void release_piece(uint32_t piece_index);
   void mark_piece_complete(uint32_t piece_index);
-  bool verify_piece_hash(uint32_t index, std::span<const std::byte> data) const;
+  bool verify_piece_hash(uint32_t index, std::span<const std::byte> bytes) const;
+  bool write_to_disk(uint32_t index, std::span<const std::byte> bytes);
 
   const metainfo::Metainfo& metainfo() const;
 

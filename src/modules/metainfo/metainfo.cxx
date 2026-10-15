@@ -4,6 +4,7 @@
 #include <crypto/sha1.hxx>
 #include "download/tracker.hxx"
 #include "logger/logger.hxx"
+#include "metainfo/file.hxx"
 #include <bencode/bencode.hxx>
 #include <bencode/encode.hxx>
 #include <boost/uuid/detail/sha1.hpp>
@@ -15,13 +16,14 @@
 #include <metainfo/metainfo.hxx>
 #include <span>
 #include <variant>
-#include <ranges>
+#include <optional>
 
 namespace metainfo {
 
 namespace {
 // Todo: handle multiple file download
 std::vector<metainfo::File> extract_files(const bencode::Dict& info) {
+  std::vector<metainfo::File> files;
   auto name = bencode::get<bencode::ByteString>(info, "name");
   if (!name) {
     logger::error("Multiple files torrent not supported yet");
@@ -36,11 +38,9 @@ std::vector<metainfo::File> extract_files(const bencode::Dict& info) {
 
   std::filesystem::path path = std::string(*name);
   uint64_t file_length = static_cast<uint64_t>(*length);
+  files.emplace_back(path, file_length);
 
-  return {
-    metainfo::File{path, file_length}
-  };
-
+  return files;
 }
 } // namespace
 
