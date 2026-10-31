@@ -101,8 +101,7 @@ asio::awaitable<void> PeerConnection::handle_msg(const Bitfield &bitfield) {
   }
 
   logger::debug("num pieces: {}", num_pieces);
-  m_bitfield = bitfield.mask;
-  m_bitfield.resize(num_pieces);
+  m_bitfield = std::move(bitfield.mask);
 
   co_await send_message(Interested{});
 }
@@ -121,10 +120,8 @@ asio::awaitable<void> PeerConnection::handle_msg(const Piece &piece) {
     co_return;
   }
 
-  logger::trace("Progress on {} {}", piece.index, piece.block.size());
-
   if (it->second.all_chunks_received()) {
-    logger::trace("All blocks from piece {} received", piece.index);
+    logger::trace("Piece {}: all blocks received", piece.index);
     uint32_t index = piece.index;
     auto data = std::move(it->second.data);
     m_incoming_pieces.erase(it);
@@ -208,7 +205,8 @@ PeerConnection::create_handshake_message(const std::string &info_hash) {
 }
 
 asio::awaitable<void> PeerConnection::fill_requests() {
-  while (m_incoming_pieces.size() < 32) {
+	logger::debug("BFIELD {}", m_bitfield.size());
+  while (m_incoming_pieces.size() < 64) {
     auto piece = m_download_manager_ref.reserve_piece(m_bitfield);
 
     if (piece) {
@@ -220,6 +218,8 @@ asio::awaitable<void> PeerConnection::fill_requests() {
         PeerMessage request = Request(*piece, offset, 16 * 1024);
         co_await m_tcp_connection->async_write(PeerMessage::to_bytes(request));
       }
+    } else {
+    logger::warn("No piece reserved");
     }
   }
   co_return;
