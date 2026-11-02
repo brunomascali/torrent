@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <atomic>
 #include <bencode/accessors.hxx>
 #include "crypto/sha1.hxx"
 #include "download/peer/peer.hxx"
@@ -10,6 +12,7 @@
 #include <memory>
 #include <metainfo/metainfo.hxx>
 #include <span>
+#include <algorithm>
 
 namespace download {
 
@@ -34,15 +37,16 @@ void DownloadManager::start_download() {
     m_peer_connections.push_back(std::move(conn));
 
     asio::co_spawn(
-        m_io_context, raw->prepare_connection(), [](std::exception_ptr e) {
-          if (e) {
-            try {
-              std::rethrow_exception(e);
-            } catch (const std::exception &ex) {
-              logger::warn("Peer coroutine terminated: {}", ex.what());
-            }
+      m_io_context, raw->prepare_connection(), [](std::exception_ptr e) {
+        if (e) {
+          try {
+            std::rethrow_exception(e);
+          } catch (const std::exception &ex) {
+            logger::warn("Peer coroutine terminated: {}", ex.what());
           }
-        });
+        }
+      }
+    );
   }
 
   std::vector<std::thread> pool;
@@ -50,8 +54,14 @@ void DownloadManager::start_download() {
   for (unsigned i = 0; i < n; ++i) {
     pool.emplace_back([this] { m_io_context.run(); });
   }
+
   for (auto &t : pool)
     t.join();
+	}
+
+
+bool DownloadManager::download_completed() {
+	return std::ranges::contains(m_pieces_downloaded, false);
 }
 
 std::optional<uint32_t> DownloadManager::reserve_piece(const std::vector<bool>& peer_bitfield) {
@@ -61,8 +71,6 @@ std::optional<uint32_t> DownloadManager::reserve_piece(const std::vector<bool>& 
     }
     std::lock_guard lock(m_piece_mutex);
 
-    logger::debug("peer_bitfield size: {}", peer_bitfield.size());
-    logger::debug("m_pieces      size: {}", m_pieces_downloaded.size());
     for (uint32_t i = 0; i < m_pieces_downloaded.size(); ++i) {
         if (m_pieces_downloaded[i] || m_pieces_in_progress[i]) {
             continue;
@@ -130,6 +138,10 @@ bool DownloadManager::write_to_disk(uint32_t index, std::span<const std::byte> b
     logger::warn("Error writing to file: {}", write_res.error().str());
     return false;
   }
+
+  m_progress.fetch_add(1, std::memory_order_release);
+
+  logger::info("Progress: {}/{}", m_progress.load(), metainfo().num_pieces());
 
   return true;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "download/peer/message.hxx"
+#include <atomic>
 #include <download/tracker.hxx>
 #include <download/peer/peer.hxx>
 #include <download/peer/peer_connection.hxx>
@@ -18,6 +19,7 @@ public:
   explicit DownloadManager(std::unique_ptr<const metainfo::Metainfo> metainfo);
 
   void start_download();
+  bool download_completed();
 
   std::optional<uint32_t> reserve_piece(const std::vector<bool>& peer_bitfield);
   void release_piece(uint32_t piece_index);
@@ -43,6 +45,7 @@ private:
   std::mutex m_piece_mutex;
   std::vector<bool> m_pieces_downloaded;
   std::vector<bool> m_pieces_in_progress;
+  std::atomic_uint32_t m_progress{0};
 
   Tracker m_tracker{};
   asio::io_context m_io_context;
