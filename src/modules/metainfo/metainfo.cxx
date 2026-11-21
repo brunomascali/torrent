@@ -2,7 +2,6 @@
 #include "bencode/decode.hxx"
 #include <algorithm>
 #include <crypto/sha1.hxx>
-#include "download/tracker.hxx"
 #include "logger/logger.hxx"
 #include "metainfo/file.hxx"
 #include <bencode/bencode.hxx>
@@ -21,7 +20,6 @@
 namespace metainfo {
 
 namespace {
-// Todo: handle multiple file download
 std::vector<metainfo::File> extract_files(const bencode::Dict& info) {
   std::vector<metainfo::File> files;
   auto name = bencode::get<bencode::ByteString>(info, "name");
@@ -42,7 +40,7 @@ std::vector<metainfo::File> extract_files(const bencode::Dict& info) {
 
   return files;
 }
-} // namespace
+}
 
 std::expected<Metainfo, Error> Metainfo::parse(std::span<const std::byte> torrent_bytes) {
   Metainfo m;
@@ -98,13 +96,12 @@ std::expected<Metainfo, Error> Metainfo::parse(std::span<const std::byte> torren
     m.m_pieces.push_back(bytes);
   }
 
-  // todo: get all trackers from metainfo
   auto trackers = bencode::get<bencode::ByteString>(*root_dict, "announce");
   if (!trackers) {
     logger::error("Metainfo file does not have a 'announce' field", bencode.error().str());
     exit(1);
   }
-  m.m_trackers = {download::Tracker(*trackers)};
+  m.m_announce_urls = {std::string(*trackers)};
 
   const bencode::Value v = root_dict->at("info");
   logger::trace("{} -> {}", v.start, v.end);
@@ -118,4 +115,4 @@ std::span<const std::byte, 20> Metainfo::piece_hash(uint32_t index) const {
   return m_pieces[index];
 }
 
-} // namespace metainfo
+}

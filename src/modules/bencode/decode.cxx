@@ -180,4 +180,4 @@ bencode::Error bencode_err(BencodeErrorCode ec, size_t index) {
   return err;
 }
 
-} // namespace bencode
+}

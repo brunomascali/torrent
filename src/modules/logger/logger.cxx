@@ -8,4 +8,4 @@ void Logger::set_sink(std::unique_ptr<LogSink> sink) {
 
 void Logger::set_min_level(LogLevel level) { m_min_level = level; }
 
-} // namespace logger
+}

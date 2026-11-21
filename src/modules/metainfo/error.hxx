@@ -33,4 +33,4 @@ public:
   constexpr std::string module() const override { return "bencode"; }
 };
 
-} // namespace bencode
+}

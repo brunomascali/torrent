@@ -10,4 +10,4 @@ public:
   virtual ~BaseError() = default;
 };
 
-} // namespace error
+}

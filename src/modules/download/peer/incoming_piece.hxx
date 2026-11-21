@@ -60,4 +60,4 @@ struct IncomingPiece {
   }
 };
 
-} // namespace download::peer
+}

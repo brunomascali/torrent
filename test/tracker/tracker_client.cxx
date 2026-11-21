@@ -2,12 +2,13 @@
 #include <bencode/encode.hxx>
 #include <chrono>
 #include <cstring>
-#include <download/http_announce.hxx>
-#include <download/tracker.hxx>
+#include <download/tracker/tracker_client.hxx>
 #include <gtest/gtest.h>
 #include <httplib/httplib.h>
 #include <thread>
 #include <vector>
+
+using namespace download::tracker;
 
 namespace {
 
@@ -77,7 +78,18 @@ std::string make_failure_tracker_response(const std::string& reason) {
   return bencode::encode(dict);
 }
 
-} // namespace
+AnnounceRequest sample_request() {
+  AnnounceRequest req;
+  req.info_hash.fill(std::byte{'a'});
+  std::string_view id = "-TR2940-123456789012";
+  for (std::size_t i = 0; i < 20; ++i)
+    req.peer_id[i] = static_cast<std::byte>(id[i]);
+  req.port = 6881;
+  req.left = 1000;
+  return req;
+}
+
+}
 
 class MockHttpTrackerTest : public ::testing::Test {
 protected:
@@ -85,9 +97,9 @@ protected:
   std::thread server_thread;
   int port = 0;
   std::string base_url;
+  httplib::Params last_params;
 
   void SetUp() override {
-    // 1. Compact peers route
     svr.Get("/announce_compact", [](const httplib::Request&, httplib::Response& res) {
       std::vector<download::peer::Peer> peers = {
         {.peer_id = std::nullopt, .ip = "127.0.0.1", .port = 6881},
@@ -97,7 +109,6 @@ protected:
       res.set_content(make_compact_tracker_response(1800, peers, 10, 2), "text/plain");
     });
 
-    // 2. Dictionary list peers route
     svr.Get("/announce_dict", [](const httplib::Request&, httplib::Response& res) {
       std::vector<download::peer::Peer> peers = {
         {.peer_id = "-TR2940-peer12345678", .ip = "127.0.0.1", .port = 6881},
@@ -107,10 +118,20 @@ protected:
       res.set_content(make_dict_tracker_response(900, peers, 5, 1), "text/plain");
     });
 
-    // 3. Failure route
     svr.Get("/announce_fail", [](const httplib::Request&, httplib::Response& res) {
       res.status = 200;
       res.set_content(make_failure_tracker_response("unregistered torrent"), "text/plain");
+    });
+
+    svr.Get("/announce_echo", [this](const httplib::Request& req, httplib::Response& res) {
+      last_params = req.params;
+      res.status = 200;
+      res.set_content(make_compact_tracker_response(60, {}), "text/plain");
+    });
+
+    svr.Get("/announce_500", [](const httplib::Request&, httplib::Response& res) {
+      res.status = 500;
+      res.set_content("boom", "text/plain");
     });
 
     port = svr.bind_to_any_port("127.0.0.1");
@@ -134,22 +155,14 @@ protected:
 };
 
 TEST_F(MockHttpTrackerTest, HandlesCompactRepresentation) {
-  download::Tracker tracker = download::Tracker(std::format("{}/announce_compact", base_url));
-  download::HttpAnnounceRequest req{
-    .info_hash = std::string(20, 'a'),
-    .peer_id = "-TR2940-123456789012",
-    .ip = std::nullopt,
-    .port = 6881,
-    .uploaded = 0,
-    .downloaded = 0,
-    .left = 1000,
-  };
+  TrackerClient tracker(std::format("{}/announce_compact", base_url));
+  AnnounceRequest req = sample_request();
 
   auto res = tracker.announce(req);
   ASSERT_TRUE(res.has_value());
   ASSERT_TRUE(res->is_success());
 
-  const download::HttpAnnounceResponseSuccess* success = res->as_success();
+  const AnnounceSuccess* success = res->as_success();
   EXPECT_EQ(success->interval, 1800);
   ASSERT_EQ(success->peers.size(), 2);
   EXPECT_EQ(success->peers[0].ip, "127.0.0.1");
@@ -161,22 +174,14 @@ TEST_F(MockHttpTrackerTest, HandlesCompactRepresentation) {
 }
 
 TEST_F(MockHttpTrackerTest, HandlesDictionaryRepresentation) {
-  download::Tracker tracker = download::Tracker(std::format("{}/announce_dict", base_url));
-  download::HttpAnnounceRequest req{
-    .info_hash = std::string(20, 'a'),
-    .peer_id = "-TR2940-123456789012",
-    .ip = std::nullopt,
-    .port = 6881,
-    .uploaded = 0,
-    .downloaded = 0,
-    .left = 1000,
-  };
+  TrackerClient tracker(std::format("{}/announce_dict", base_url));
+  AnnounceRequest req = sample_request();
 
   auto res = tracker.announce(req);
   ASSERT_TRUE(res.has_value());
   ASSERT_TRUE(res->is_success());
 
-  const download::HttpAnnounceResponseSuccess* success = res->as_success();
+  const AnnounceSuccess* success = res->as_success();
   EXPECT_EQ(success->interval, 900);
   ASSERT_EQ(success->peers.size(), 2);
   EXPECT_EQ(success->peers[0].peer_id, "-TR2940-peer12345678");
@@ -190,21 +195,61 @@ TEST_F(MockHttpTrackerTest, HandlesDictionaryRepresentation) {
 }
 
 TEST_F(MockHttpTrackerTest, HandlesFailureResponse) {
-  download::Tracker tracker = download::Tracker(std::format("{}/announce_fail", base_url));
-  download::HttpAnnounceRequest req{
-    .info_hash = std::string(20, 'a'),
-    .peer_id = "-TR2940-123456789012",
-    .ip = std::nullopt,
-    .port = 6881,
-    .uploaded = 0,
-    .downloaded = 0,
-    .left = 1000,
-  };
+  TrackerClient tracker(std::format("{}/announce_fail", base_url));
+  AnnounceRequest req = sample_request();
 
   auto res = tracker.announce(req);
   ASSERT_TRUE(res.has_value());
   ASSERT_TRUE(res->is_failure());
 
-  const download::HttpAnnounceResponseFailure* failure = res->as_failure();
+  const AnnounceFailure* failure = res->as_failure();
   EXPECT_EQ(failure->failure_reason, "unregistered torrent");
+}
+
+TEST_F(MockHttpTrackerTest, SendsAllRequiredParameters) {
+  TrackerClient tracker(std::format("{}/announce_echo", base_url));
+  AnnounceRequest req = sample_request();
+  req.info_hash[0] = std::byte{0xff};
+  req.event = Event::started;
+
+  auto res = tracker.announce(req);
+  ASSERT_TRUE(res.has_value()) << res.error();
+
+  auto param = [&](const std::string& key) {
+    auto it = last_params.find(key);
+    return it == last_params.end() ? std::string("<missing>") : it->second;
+  };
+  EXPECT_EQ(param("info_hash"), "\xff" + std::string(19, 'a'));
+  EXPECT_EQ(param("peer_id"), "-TR2940-123456789012");
+  EXPECT_EQ(param("port"), "6881");
+  EXPECT_EQ(param("left"), "1000");
+  EXPECT_EQ(param("compact"), "1");
+  EXPECT_EQ(param("event"), "started");
+}
+
+TEST_F(MockHttpTrackerTest, KeepsExistingQueryInAnnounceUrl) {
+  TrackerClient tracker(std::format("{}/announce_echo?passkey=secret", base_url));
+  auto res = tracker.announce(sample_request());
+  ASSERT_TRUE(res.has_value()) << res.error();
+  EXPECT_EQ(last_params.find("passkey")->second, "secret");
+  EXPECT_EQ(last_params.find("port")->second, "6881");
+}
+
+TEST_F(MockHttpTrackerTest, ReportsHttpErrorStatus) {
+  TrackerClient tracker(std::format("{}/announce_500", base_url));
+  auto res = tracker.announce(sample_request());
+  ASSERT_FALSE(res.has_value());
+  EXPECT_NE(res.error().find("500"), std::string::npos);
+}
+
+TEST(TrackerClient, ReportsUnreachableTrackerWithinTimeout) {
+  TrackerClient tracker("http://127.0.0.1:1/announce",
+                        {.connect = std::chrono::milliseconds(300),
+                         .read = std::chrono::milliseconds(300)});
+  const auto start = std::chrono::steady_clock::now();
+  auto res = tracker.announce(sample_request());
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  ASSERT_FALSE(res.has_value());
+  EXPECT_LT(elapsed, std::chrono::seconds(5));
 }

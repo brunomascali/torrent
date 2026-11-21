@@ -50,4 +50,4 @@ private:
   std::filesystem::path m_path;
 };
 
-} // namespace io
+}

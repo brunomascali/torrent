@@ -24,4 +24,4 @@ get(const Dict &dict, const std::string &key) {
   return std::cref(*value);
 }
 
-} // namespace bencode
+}

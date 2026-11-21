@@ -42,8 +42,10 @@ public:
       return logger;
   }
 
-  // Todo: filter messages with level less than min_level
   void log(LogLevel level, std::string_view message) {
+    if (!m_sink) {
+      return;
+    }
     m_sink->write(level, message);
   }
 
@@ -87,4 +89,4 @@ void error(std::format_string<Args...> fmt, Args &&...args) {
   Logger::instance().log(LogLevel::Error, std::format(fmt, std::forward<Args>(args)...));
 }
 
-} // namespace logger
+}

@@ -14,7 +14,7 @@ Error net_error(std::error_code ec, std::string context) {
   return e;
 }
 
-} // namespace
+}
 
 TcpConnection::TcpConnection(tcp::socket socket, std::string remote)
     : m_socket(std::move(socket)), m_remote(std::move(remote)) {}
@@ -56,37 +56,24 @@ TcpConnection::async_write(std::span<const std::byte> bytes) {
   co_return std::expected<void, Error>{};
 }
 
-asio::awaitable<std::expected<std::vector<std::byte>, Error>>
-TcpConnection::async_read_exact(std::size_t n) {
-  std::vector<std::byte> buf(n);
+asio::awaitable<std::expected<void, Error>>
+TcpConnection::async_read_exact(std::span<std::byte> buffer) {
   auto [ec, bytes_read] = co_await asio::async_read(
-      m_socket, asio::buffer(buf), asio::as_tuple(asio::use_awaitable));
+      m_socket, asio::buffer(buffer), asio::as_tuple(asio::use_awaitable));
 
   if (ec) {
     co_return std::unexpected(net_error(ec, m_remote));
   }
+  co_return std::expected<void, Error>{};
+}
+
+asio::awaitable<std::expected<std::vector<std::byte>, Error>>
+TcpConnection::async_read_exact(std::size_t n) {
+  std::vector<std::byte> buf(n);
+  if (auto got = co_await async_read_exact(std::span(buf)); !got) {
+    co_return std::unexpected(std::move(got.error()));
+  }
   co_return buf;
 }
 
-asio::awaitable<std::expected<std::uint32_t, Error>>
-TcpConnection::async_read_u32() {
-  auto bytes = co_await async_read_exact(4);
-  if (!bytes)
-    co_return std::unexpected(std::move(bytes.error()));
-
-  std::uint32_t number = (std::to_integer<std::uint32_t>((*bytes)[0]) << 24) |
-                         (std::to_integer<std::uint32_t>((*bytes)[1]) << 16) |
-                         (std::to_integer<std::uint32_t>((*bytes)[2]) << 8) |
-                         std::to_integer<std::uint32_t>((*bytes)[3]);
-  co_return number;
 }
-
-asio::awaitable<std::expected<std::byte, Error>>
-TcpConnection::async_read_byte() {
-  auto bytes = co_await async_read_exact(1);
-  if (!bytes)
-    co_return std::unexpected(std::move(bytes.error()));
-  co_return (*bytes)[0];
-}
-
-} // namespace io

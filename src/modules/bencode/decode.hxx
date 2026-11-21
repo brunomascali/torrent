@@ -10,4 +10,4 @@ namespace bencode {
 
 std::expected<bencode::Value, bencode::Error> decode(std::span<const std::byte>);
 
-} // namespace bencode
+}

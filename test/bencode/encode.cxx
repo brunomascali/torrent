@@ -12,10 +12,6 @@ std::span<const std::byte> as_bytes(std::string_view str) {
 }
 }
 
-// ==========================================
-// ENCODER TESTS
-// ==========================================
-
 TEST(BencodeEncoderTest, EncodesStrings) {
   bencode::Value val{bencode::ByteString{"spam"}};
   EXPECT_EQ(bencode::encode(val), "4:spam");
@@ -54,7 +50,6 @@ TEST(BencodeEncoderTest, EncodesEmptyList) {
 }
 
 TEST(BencodeEncoderTest, EncodesDictionaries) {
-  // {"bar": "spam", "foo": 42}
   bencode::Dict dict{
       {"bar", bencode::Value{bencode::ByteString{"spam"}}},
       {"foo", bencode::Value{bencode::Integer{42}}},
@@ -65,8 +60,6 @@ TEST(BencodeEncoderTest, EncodesDictionaries) {
 }
 
 TEST(BencodeEncoderTest, EncodesDictionaryKeysInSortedOrder) {
-  // Insertion order deliberately not sorted; bencode requires
-  // dict keys to appear in raw byte order regardless of input order.
   bencode::Dict dict{
       {"zebra", bencode::Value{bencode::Integer{1}}},
       {"apple", bencode::Value{bencode::Integer{2}}},
@@ -83,7 +76,6 @@ TEST(BencodeEncoderTest, EncodesEmptyDict) {
 }
 
 TEST(BencodeEncoderTest, EncodesNestedListsAndDicts) {
-  // {"files": [{"length": 100}, {"length": 200}]}
   bencode::List files{
       bencode::Value{bencode::Dict{
                          {"length", bencode::Value{bencode::Integer{100}}},

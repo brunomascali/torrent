@@ -3,7 +3,6 @@
 
 #include <bencode/bencode.hxx>
 #include <cstdint>
-#include <download/tracker.hxx>
 #include <expected>
 #include <metainfo/error.hxx>
 #include <string>
@@ -23,7 +22,7 @@ public:
   const std::vector<File>& files() const { return m_files; };
   std::span<const std::byte, 20> pieces() const;
   std::span<const std::byte, 20> piece_hash(uint32_t index) const;
-  const std::vector<download::Tracker> &trackers() const { return m_trackers; };
+  const std::vector<std::string> &announce_urls() const { return m_announce_urls; };
 
   std::expected<bencode::ByteString, metainfo::Error> name() const;
 
@@ -38,8 +37,8 @@ private:
   std::vector<std::array<std::byte, 20>> m_pieces;
   std::array<std::byte, 20> m_info_hash;
   std::vector<File> m_files;
-  std::vector<download::Tracker> m_trackers;
+  std::vector<std::string> m_announce_urls;
 };
 
 
-} // namespace metainfo
+}

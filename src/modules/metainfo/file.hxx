@@ -18,4 +18,4 @@ struct File {
   }
 };
 
-} // namespace metainfo
+}

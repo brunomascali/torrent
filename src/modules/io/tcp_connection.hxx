@@ -14,10 +14,10 @@
 
 #include <io/error.hxx>
 
+namespace io {
+
 namespace asio = boost::asio;
 using asio::ip::tcp;
-
-namespace io {
 
 class TcpConnection {
 public:
@@ -31,15 +31,14 @@ public:
   TcpConnection &operator=(const TcpConnection &) = delete;
 
   asio::awaitable<std::expected<void, Error>> async_write(std::span<const std::byte> bytes);
+  asio::awaitable<std::expected<void, Error>> async_read_exact(std::span<std::byte> buffer);
   asio::awaitable<std::expected<std::vector<std::byte>, Error>> async_read_exact(std::size_t n);
-  asio::awaitable<std::expected<std::byte, Error>> async_read_byte();
-  asio::awaitable<std::expected<std::uint32_t, Error>> async_read_u32();
 
 private:
   TcpConnection(tcp::socket socket, std::string remote);
 
   tcp::socket m_socket;
-  std::string m_remote; // "ip:port", used as error context
+  std::string m_remote;
 };
 
-} // namespace io
+}

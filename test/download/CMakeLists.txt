@@ -2,7 +2,6 @@ find_package(GTest REQUIRED)
 
 add_executable(download_test
     download.cxx
-    http_tracker.cxx
 )
 
 target_link_libraries(download_test

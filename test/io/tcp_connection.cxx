@@ -5,11 +5,11 @@
 #include <boost/asio.hpp>
 #include <optional>
 
+namespace asio = boost::asio;
+using tcp = asio::ip::tcp;
+
 namespace {
 
-// Runs a coroutine to completion on a fresh io_context and returns its result.
-// The result is stored from inside the coroutine because co_spawn's handler
-// needs a default-constructible value type, which these results are not.
 template <class T> T run(asio::io_context &ctx, asio::awaitable<T> aw) {
   std::optional<T> result;
   asio::co_spawn(
@@ -23,14 +23,13 @@ template <class T> T run(asio::io_context &ctx, asio::awaitable<T> aw) {
   return std::move(*result);
 }
 
-} // namespace
+}
 
 TEST(TcpConnectionTest, ConnectsAndExchangesBytes) {
   asio::io_context ctx;
   tcp::acceptor acceptor(ctx, tcp::endpoint(asio::ip::make_address("127.0.0.1"), 0));
   auto port = acceptor.local_endpoint().port();
 
-  // Server: accept one client, echo 5 bytes back.
   asio::co_spawn(ctx, [&]() -> asio::awaitable<void> {
     auto socket = co_await acceptor.async_accept(asio::use_awaitable);
     std::array<std::byte, 5> buf;
@@ -48,15 +47,12 @@ TEST(TcpConnectionTest, ConnectsAndExchangesBytes) {
     if (auto w = co_await conn->async_write(msg); !w)
       co_return std::unexpected(w.error());
 
-    auto number = co_await conn->async_read_u32();
-    if (!number)
-      co_return std::unexpected(number.error());
-    EXPECT_EQ(*number, 0x00000102u);
+    std::array<std::byte, 4> head;
+    if (auto r = co_await conn->async_read_exact(head); !r)
+      co_return std::unexpected(r.error());
+    EXPECT_EQ(head, (std::array<std::byte, 4>{msg[0], msg[1], msg[2], msg[3]}));
 
-    auto byte = co_await conn->async_read_byte();
-    if (!byte)
-      co_return std::unexpected(byte.error());
-    co_return std::vector<std::byte>{*byte};
+    co_return co_await conn->async_read_exact(1);
   }());
 
   ASSERT_TRUE(result.has_value()) << result.error().str();
@@ -65,7 +61,6 @@ TEST(TcpConnectionTest, ConnectsAndExchangesBytes) {
 
 TEST(TcpConnectionTest, ReportsRefusedConnection) {
   asio::io_context ctx;
-  // Bind and close to get a port with nothing listening on it.
   std::uint16_t port;
   {
     tcp::acceptor acceptor(ctx, tcp::endpoint(asio::ip::make_address("127.0.0.1"), 0));
@@ -90,7 +85,6 @@ TEST(TcpConnectionTest, ReadFailsWhenPeerCloses) {
   tcp::acceptor acceptor(ctx, tcp::endpoint(asio::ip::make_address("127.0.0.1"), 0));
   auto port = acceptor.local_endpoint().port();
 
-  // Server: accept and immediately close.
   asio::co_spawn(ctx, [&]() -> asio::awaitable<void> {
     auto socket = co_await acceptor.async_accept(asio::use_awaitable);
     socket.close();

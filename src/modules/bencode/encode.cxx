@@ -35,4 +35,4 @@ std::string encode(const bencode::Value &bencode) {
   }
   return "";
 }
-} // namespace bencode
+}

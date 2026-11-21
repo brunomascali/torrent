@@ -11,10 +11,6 @@ std::span<const std::byte> as_bytes(std::string_view str) {
 }
 }
 
-// ==========================================
-// DECODER TESTS
-// ==========================================
-
 TEST(BencodeDecoderTest, ParsesStrings) {
   auto res = bencode::decode(as_bytes("4:spam"));
   ASSERT_TRUE(res.has_value());
@@ -67,7 +63,6 @@ TEST(BencodeDecoderTest, ParsesLists) {
 }
 
 TEST(BencodeDecoderTest, ParsesDictionaries) {
-  // {"bar": "spam", "foo": 42}
   auto res = bencode::decode(as_bytes("d3:bar4:spam3:fooi42ee"));
   ASSERT_TRUE(res.has_value());
 

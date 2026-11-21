@@ -7,4 +7,4 @@ namespace bencode {
 
 std::string encode(const bencode::Value& bencode);
 
-} // namespace bencode
+}

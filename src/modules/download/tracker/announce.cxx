@@ -1,41 +1,49 @@
 #include <bencode/decode.hxx>
-#include <array>
+#include <download/tracker/announce.hxx>
+
 #include <cstdint>
 #include <format>
 #include <span>
-#include <httplib/httplib.h>
 
-#include <download/http_announce.hxx>
+namespace download::tracker {
 
-namespace download {
+namespace {
 
-HttpAnnounceRequest HttpAnnounceRequest::build_request(const download::DownloadManager& manager) {
-  return HttpAnnounceRequest{
-    .info_hash = manager.info_hash(),
-    .peer_id = "-TR2940-614361349012",
-    .ip = std::nullopt,
-    .port = 6881,
-    .uploaded = manager.uploaded(),
-    .downloaded = manager.downloaded(),
-    .left = manager.left(),
-  };
+std::string_view to_string(Event event) {
+  switch (event) {
+  case Event::started:
+    return "started";
+  case Event::completed:
+    return "completed";
+  case Event::stopped:
+    return "stopped";
+  case Event::none:
+    break;
+  }
+  return "";
 }
 
-std::string HttpAnnounceRequest::encode_params() const {
-  std::string url{};
+}
 
-  url += "?info_hash=" + url_encode(info_hash);
-  url += "&peer_id=" + url_encode(peer_id);
-  url += "&port=" + std::to_string(port);
-  url += "&uploaded=" + std::to_string(uploaded);
-  url += "&downloaded=" + std::to_string(downloaded);
-  url += "&left=" + std::to_string(left);
-
-  if (ip.has_value()) {
-    url += "&ip=" + url_encode(*ip);
+std::string AnnounceRequest::query_string() const {
+  std::string q;
+  q += "info_hash=" + url_encode(info_hash);
+  q += "&peer_id=" + url_encode(peer_id);
+  q += "&port=" + std::to_string(port);
+  q += "&uploaded=" + std::to_string(uploaded);
+  q += "&downloaded=" + std::to_string(downloaded);
+  q += "&left=" + std::to_string(left);
+  if (compact) {
+    q += "&compact=1";
   }
-
-  return url;
+  if (event != Event::none) {
+    q += "&event=";
+    q += to_string(event);
+  }
+  if (ip) {
+    q += "&ip=" + url_encode(*ip);
+  }
+  return q;
 }
 
 std::string url_encode(std::span<const std::byte> data) {
@@ -59,8 +67,8 @@ std::string url_encode(std::span<const std::byte> data) {
   return encoded;
 }
 
-std::expected<HttpAnnounceResponse, std::string>
-HttpAnnounceResponse::parse(std::string_view data) {
+std::expected<AnnounceResponse, std::string>
+AnnounceResponse::parse(std::string_view data) {
   auto span = std::as_bytes(std::span(data.data(), data.size()));
   auto decode_res = bencode::decode(span);
   if (!decode_res.has_value()) {
@@ -69,8 +77,8 @@ HttpAnnounceResponse::parse(std::string_view data) {
   return from_bencode(decode_res.value());
 }
 
-std::expected<HttpAnnounceResponse, std::string>
-HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
+std::expected<AnnounceResponse, std::string>
+AnnounceResponse::from_bencode(const bencode::Value& value) {
   if (!std::holds_alternative<bencode::Dict>(value.data)) {
     return std::unexpected("Tracker response root is not a dictionary");
   }
@@ -82,7 +90,7 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
       return std::unexpected("Field 'failure reason' is not a byte string");
     }
 
-    HttpAnnounceResponseFailure failure{
+    AnnounceFailure failure{
       .failure_reason = std::get<bencode::ByteString>(it->second.data),
       .warning_message = std::nullopt,
     };
@@ -93,10 +101,10 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
       }
     }
 
-    return HttpAnnounceResponse(std::move(failure));
+    return AnnounceResponse(std::move(failure));
   }
 
-  HttpAnnounceResponseSuccess success;
+  AnnounceSuccess success;
 
   auto interval_it = dict.find("interval");
   if (interval_it == dict.end()) {
@@ -107,7 +115,6 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
   }
   success.interval = std::get<bencode::Integer>(interval_it->second.data);
 
-  // 3. Peers (required for success)
   auto peers_it = dict.find("peers");
   if (peers_it == dict.end()) {
     return std::unexpected("Missing required key 'peers' in tracker response");
@@ -134,7 +141,6 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
       });
     }
   } else if (std::holds_alternative<bencode::List>(peers_it->second.data)) {
-    // Standard dictionary peer list
     const auto& peer_list = std::get<bencode::List>(peers_it->second.data);
     success.peers.reserve(peer_list.size());
 
@@ -172,7 +178,6 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
     return std::unexpected("Field 'peers' is neither a byte string nor a list");
   }
 
-  // 4. Optional fields
   if (auto it = dict.find("min interval"); it != dict.end()) {
     if (std::holds_alternative<bencode::Integer>(it->second.data)) {
       success.min_interval = std::get<bencode::Integer>(it->second.data);
@@ -203,7 +208,6 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
     }
   }
 
-  // 5. Peers6 (BEP 7 compact IPv6, optional)
   if (auto it = dict.find("peers6"); it != dict.end()) {
     if (std::holds_alternative<bencode::ByteString>(it->second.data)) {
       const auto& compact_ipv6 = std::get<bencode::ByteString>(it->second.data);
@@ -228,7 +232,7 @@ HttpAnnounceResponse::from_bencode(const bencode::Value& value) {
     }
   }
 
-  return HttpAnnounceResponse(std::move(success));
+  return AnnounceResponse(std::move(success));
 }
 
-} // namespace download
+}

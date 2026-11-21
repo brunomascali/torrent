@@ -29,4 +29,4 @@ public:
   Value(Dict d) : data(std::move(d)) {}
 };
 
-} // namespace bencode
+}

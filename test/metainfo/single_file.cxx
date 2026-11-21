@@ -1,4 +1,3 @@
-#include "download/tracker.hxx"
 #include <cstddef>
 #include <cstdlib>
 #include <gtest/gtest.h>
@@ -48,7 +47,7 @@ protected:
 TEST_F(SingleFileMetainfoTest, SuccessfullyReadsAnnounceUrl) {
   auto result = m_metainfo->announce();
   ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result.value(), download::Tracker("http://bruno.com"));
+  EXPECT_EQ(result.value(), "http://bruno.com");
 }
 
 TEST_F(SingleFileMetainfoTest, SuccessfullyReadsName) {

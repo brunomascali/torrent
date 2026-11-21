@@ -25,7 +25,7 @@ public:
   }
 };
 
-} // namespace
+}
 
 const std::error_category &io_category() noexcept {
   static const IoCategory category;
@@ -51,4 +51,4 @@ std::string Error::str() const {
   return std::format("[{}] {}: {}", module(), context, code.message());
 }
 
-} // namespace io
+}

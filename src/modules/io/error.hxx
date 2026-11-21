@@ -20,6 +20,6 @@ struct Error : error::BaseError {
   std::string module() const override { return "io"; }
 };
 
-} // namespace io
+}
 
 template <> struct std::is_error_code_enum<io::ErrC> : std::true_type {};

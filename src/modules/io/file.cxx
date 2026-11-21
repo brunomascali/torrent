@@ -18,7 +18,7 @@ Error make_error(ErrC code, const std::filesystem::path &path) {
   return e;
 }
 
-} // namespace
+}
 
 std::expected<File, Error> File::open(const std::filesystem::path &path,
                                       OpenMode mode) {
@@ -144,4 +144,4 @@ std::expected<void, Error> File::sync() {
   return {};
 }
 
-} // namespace io
+}
