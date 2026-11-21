@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <bencode/bencode.hxx>
 #include <cstdint>
 #include <expected>

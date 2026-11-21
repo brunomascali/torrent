@@ -7,13 +7,16 @@
 namespace metainfo {
 
 enum class MetainfoErrorCode {
-  missing_key
+  missing_key,
+  invalid_value
 };
 
 constexpr std::string to_string(MetainfoErrorCode ec) {
   switch (ec) {
   case MetainfoErrorCode::missing_key:
     return "Missing key";
+  case MetainfoErrorCode::invalid_value:
+    return "Invalid value";
   }
   return "Unknown metainfo error";
 }

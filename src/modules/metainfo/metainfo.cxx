@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <expected>
+#include <filesystem>
+#include <format>
 #include <metainfo/error.hxx>
 #include <metainfo/metainfo.hxx>
 #include <span>
@@ -20,23 +22,65 @@
 namespace metainfo {
 
 namespace {
-std::vector<metainfo::File> extract_files(const bencode::Dict& info) {
-  std::vector<metainfo::File> files;
+Error invalid(std::string detail) {
+  return Error(MetainfoErrorCode::invalid_value, std::move(detail));
+}
+
+std::expected<std::vector<metainfo::File>, Error>
+extract_files(const bencode::Dict &info) {
   auto name = bencode::get<bencode::ByteString>(info, "name");
   if (!name) {
-    logger::error("Multiple files torrent not supported yet");
-    exit(1);
+    return std::unexpected(Error(MetainfoErrorCode::missing_key, "info.name"));
+  }
+  const std::filesystem::path root = std::string(*name);
+
+  std::vector<metainfo::File> files;
+
+  if (auto length = bencode::get<bencode::Integer>(info, "length")) {
+    if (*length < 0) {
+      return std::unexpected(invalid("info.length is negative"));
+    }
+    files.emplace_back(root, static_cast<uint64_t>(*length));
+    return files;
   }
 
-  auto length = bencode::get<bencode::Integer>(info, "length");
-  if (!length) {
-    logger::error("Multiple files torrent not supported yet");
-    exit(1);
+  auto list = bencode::get<bencode::List>(info, "files");
+  if (!list) {
+    return std::unexpected(Error(MetainfoErrorCode::missing_key,
+                                 "info.length or info.files"));
+  }
+  if (list->get().empty()) {
+    return std::unexpected(invalid("info.files is empty"));
   }
 
-  std::filesystem::path path = std::string(*name);
-  uint64_t file_length = static_cast<uint64_t>(*length);
-  files.emplace_back(path, file_length);
+  for (std::size_t i = 0; i < list->get().size(); ++i) {
+    const auto *entry = std::get_if<bencode::Dict>(&list->get()[i].data);
+    if (!entry) {
+      return std::unexpected(invalid(std::format("info.files[{}] is not a dictionary", i)));
+    }
+
+    auto length = bencode::get<bencode::Integer>(*entry, "length");
+    if (!length || *length < 0) {
+      return std::unexpected(invalid(std::format("info.files[{}].length", i)));
+    }
+
+    auto parts = bencode::get<bencode::List>(*entry, "path");
+    if (!parts || parts->get().empty()) {
+      return std::unexpected(invalid(std::format("info.files[{}].path", i)));
+    }
+
+    std::filesystem::path path = root;
+    for (const auto &part : parts->get()) {
+      const auto *component = std::get_if<bencode::ByteString>(&part.data);
+      if (!component) {
+        return std::unexpected(
+            invalid(std::format("info.files[{}].path has a non-string component", i)));
+      }
+      path /= *component;
+    }
+
+    files.emplace_back(std::move(path), static_cast<uint64_t>(*length));
+  }
 
   return files;
 }
@@ -62,13 +106,6 @@ std::expected<Metainfo, Error> Metainfo::parse(std::span<const std::byte> torren
     logger::error("Metainfo file does not have a 'info' dictionary", bencode.error().str());
     exit(1);
   }
-
-  auto length = bencode::get<bencode::Integer>(*info_dict, "length");
-  if (!length) {
-    logger::error("Metainfo file does not have a 'info.length' integer (could be a multiple files download)", bencode.error().str());
-    exit(1);
-  }
-  m.m_length = *length;
 
   auto piece_length = bencode::get<bencode::Integer>(*info_dict, "piece length");
   if (!piece_length) {
@@ -106,7 +143,16 @@ std::expected<Metainfo, Error> Metainfo::parse(std::span<const std::byte> torren
   const bencode::Value v = root_dict->at("info");
   logger::trace("{} -> {}", v.start, v.end);
   m.m_info_hash = crypto::sha1({torrent_bytes.begin() + v.start, torrent_bytes.begin() + v.end + 1});
-  m.m_files = extract_files(*info_dict);
+
+  auto files = extract_files(*info_dict);
+  if (!files) {
+    return std::unexpected(files.error());
+  }
+  m.m_files = std::move(*files);
+  m.m_length = 0;
+  for (const auto &file : m.m_files) {
+    m.m_length += file.length;
+  }
 
   return m;
 }

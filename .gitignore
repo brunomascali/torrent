@@ -2,3 +2,5 @@
 build
 log.txt
 *.iso
+*.torrent
+debug
