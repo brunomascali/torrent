@@ -1,7 +1,7 @@
 #include "download/download_manager.hxx"
 #include <bencode/decode.hxx>
 #include <download/http_announce.hxx>
-#include <io/file_handle.hxx>
+#include <io/file.hxx>
 #include <metainfo/metainfo.hxx>
 #include <download/peer/peer_connection.hxx>
 #include <logger/logger.hxx>
@@ -18,16 +18,18 @@ int main(int argc, char** argv) {
   }
 
   auto file = argv[1];
-  auto handle = io::FileHandle(file);
-  auto res = handle.open();
-  if (!res.has_value()) {
-    logger::error("Error creating file handle");
+  auto handle = io::File::open(file, io::OpenMode::read_only);
+  if (!handle) {
+    logger::error("Error opening torrent file: {}", handle.error().str());
     exit(1);
   }
 
-  auto file_size = handle.size().value();
+  auto file_size = handle->size().value();
   std::vector<std::byte> buffer(file_size, std::byte{0});
-  auto bytes_read = handle.read_at(0, buffer);
+  if (auto read = handle->read_exact_at(0, buffer); !read) {
+    logger::error("Error reading torrent file: {}", read.error().str());
+    exit(1);
+  }
 
   auto decode_res = bencode::decode(buffer);
   auto m_bencode = std::make_unique<bencode::Value>(decode_res.value());

@@ -24,14 +24,12 @@ PeerConnection::PeerConnection(const Peer &peer,
 }
 
 asio::awaitable<void> PeerConnection::prepare_connection() {
-  m_tcp_connection = std::make_unique<io::TcpConnection>(
-      m_download_manager_ref.io_context(), m_peer.ip, m_peer.port);
-
-  auto connect_result = co_await m_tcp_connection->async_connect();
-  if (!connect_result) {
-    logger::warn("Connect failed: {}", connect_result.error());
+  auto connection = co_await io::TcpConnection::connect(m_peer.ip, m_peer.port);
+  if (!connection) {
+    logger::warn("Connect failed: {}", connection.error().str());
     co_return;
   }
+  m_tcp_connection.emplace(std::move(*connection));
 
   auto hs_result = co_await handshake(m_download_manager_ref.info_hash());
 
@@ -117,23 +115,22 @@ asio::awaitable<void> PeerConnection::handle_msg(const Piece &piece) {
   }
 
   if (!it->second.add_chunk(piece.begin, piece.block)) {
-    // Maybe mark the piece as available again?
     co_return;
   }
 
-  logger::trace("Progress on {} {}", piece.index, piece.block.size());
-
   if (it->second.all_chunks_received()) {
-    logger::trace("All blocks from piece {} received", piece.index);
+    logger::trace("Piece {} completed", piece.index);
     uint32_t index = piece.index;
     auto data = std::move(it->second.data);
     m_incoming_pieces.erase(it);
 
     if (m_download_manager_ref.verify_piece_hash(index, data)) {
-      logger::debug("Piece {} validated. Can write to disk", index);
-      m_download_manager_ref.write_to_disk(index, data);
+      if (m_download_manager_ref.write_to_disk(index, data))
+        m_download_manager_ref.mark_piece_complete(index);
+      else
+        m_download_manager_ref.release_piece(index);
     } else {
-      logger::debug("Piece {} hash != expected", index);
+      m_download_manager_ref.release_piece(index);
     }
 
     co_await fill_requests();
@@ -211,6 +208,8 @@ asio::awaitable<void> PeerConnection::fill_requests() {
   while (m_incoming_pieces.size() < 32) {
     auto piece = m_download_manager_ref.reserve_piece(m_bitfield);
 
+    if (!piece) break;
+
     if (piece) {
       m_incoming_pieces.emplace(
         std::make_pair(*piece, IncomingPiece(*piece, 262144))
@@ -229,18 +228,18 @@ asio::awaitable<std::expected<PeerMessage, std::string>>
 PeerConnection::receive_message() {
   auto length = co_await m_tcp_connection->async_read_u32();
   if (!length)
-    co_return std::unexpected(length.error());
+    co_return std::unexpected(length.error().str());
 
   if (*length == 0)
     co_return KeepAlive{};
 
   auto id = co_await m_tcp_connection->async_read_byte();
   if (!id)
-    co_return std::unexpected(id.error());
+    co_return std::unexpected(id.error().str());
 
   auto payload = co_await m_tcp_connection->async_read_exact(*length - 1);
   if (!payload)
-    co_return std::unexpected(payload.error());
+    co_return std::unexpected(payload.error().str());
 
   co_return PeerMessage::from_bytes(*id, *payload, m_download_manager_ref.metainfo().num_pieces());
 }

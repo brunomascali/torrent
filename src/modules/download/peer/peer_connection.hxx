@@ -7,6 +7,7 @@
 #include <download/peer/incoming_piece.hxx>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
@@ -35,8 +36,9 @@ namespace download::peer {
       bool m_choked{true};
       bool m_interested{false};
       std::vector<bool> m_bitfield;
-      // TCP Connection
-      std::unique_ptr<io::TcpConnection> m_tcp_connection;
+      // TCP Connection. Set once in prepare_connection(), before anything else
+      // uses it.
+      std::optional<io::TcpConnection> m_tcp_connection;
       // uint32_t m_incoming_pieces{0};
       std::map<uint32_t, download::peer::IncomingPiece> m_incoming_pieces;
 

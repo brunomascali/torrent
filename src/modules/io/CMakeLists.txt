@@ -1,5 +1,6 @@
 add_library(io STATIC
-  file_handle.cxx
+  error.cxx
+  file.cxx
   tcp_connection.cxx
 )
 

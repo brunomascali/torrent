@@ -28,6 +28,10 @@ DownloadManager::DownloadManager(
 void DownloadManager::start_download() {
   logger::info("Starting download...");
 
+  if (!open_files()) {
+    return;
+  }
+
   for (const auto &peer : fetch_peers()) {
     auto conn = std::make_unique<peer::PeerConnection>(peer, *this);
     auto *raw = conn.get();
@@ -61,8 +65,7 @@ std::optional<uint32_t> DownloadManager::reserve_piece(const std::vector<bool>& 
     }
     std::lock_guard lock(m_piece_mutex);
 
-    logger::debug("peer_bitfield size: {}", peer_bitfield.size());
-    logger::debug("m_pieces      size: {}", m_pieces_downloaded.size());
+
     for (uint32_t i = 0; i < m_pieces_downloaded.size(); ++i) {
         if (m_pieces_downloaded[i] || m_pieces_in_progress[i]) {
             continue;
@@ -71,10 +74,12 @@ std::optional<uint32_t> DownloadManager::reserve_piece(const std::vector<bool>& 
             continue;
         }
 
+        logger::trace("Reserving piece {}", i);
         m_pieces_in_progress[i] = true;
         return i;
     }
 
+    logger::trace("No free piece");
     return std::nullopt;
 }
 
@@ -116,21 +121,27 @@ bool DownloadManager::write_to_disk(uint32_t index, std::span<const std::byte> b
   uint64_t piece_start = uint64_t{index} * metainfo().piece_length();
   uint64_t piece_end = piece_start + bytes.size();
 
-  auto &file = metainfo().files().front();
-
-  if (!file.handle.is_open()) {
-    auto open = file.handle.open();
-    if (!open.has_value()) {
-      logger::error("Error opening file handle: {}", open.error().str());
-    }
-  }
-  auto write_res = file.handle.write_at(piece_start, bytes);
+  // Single-file torrents only for now.
+  auto write_res = m_files.front().write_all_at(piece_start, bytes);
 
   if (!write_res.has_value()) {
     logger::warn("Error writing to file: {}", write_res.error().str());
     return false;
   }
 
+  return true;
+}
+
+bool DownloadManager::open_files() {
+  m_files.clear();
+  for (const auto &file : metainfo().files()) {
+    auto opened = io::File::open(file.path, io::OpenMode::create);
+    if (!opened) {
+      logger::error("Error opening file: {}", opened.error().str());
+      return false;
+    }
+    m_files.push_back(std::move(*opened));
+  }
   return true;
 }
 

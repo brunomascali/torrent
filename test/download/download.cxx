@@ -2,7 +2,7 @@
 #include <bencode/bencode.hxx>
 #include <bencode/decode.hxx>
 #include <download/download_manager.hxx>
-#include <io/file_handle.hxx>
+#include <io/file.hxx>
 #include <metainfo/metainfo.hxx>
 #include <gtest/gtest.h>
 #include <boost/asio/ip/address.hpp>
@@ -23,15 +23,15 @@ protected:
 
     std::filesystem::path torrent_path =
         std::filesystem::path(project_root) / "ubuntu-26.04-desktop-amd64.iso.torrent";
-    auto handle = io::FileHandle(torrent_path);
+    auto handle = io::File::open(torrent_path, io::OpenMode::read_only);
 
-    ASSERT_TRUE(handle.open().has_value())
+    ASSERT_TRUE(handle.has_value())
         << "Could not find ubuntu-26.04-desktop-amd64.iso.torrent file in the working directory.";
 
-    auto file_size = handle.size().value();
+    auto file_size = handle->size().value();
     std::vector<std::byte> buffer(file_size, std::byte{0});
-    auto bytes_read = handle.read_at(0, buffer);
-    ASSERT_EQ(file_size, bytes_read) << "File was not completely read";
+    ASSERT_TRUE(handle->read_exact_at(0, buffer).has_value())
+        << "File was not completely read";
 
     auto decode_res = bencode::decode(buffer);
     ASSERT_TRUE(decode_res.has_value())

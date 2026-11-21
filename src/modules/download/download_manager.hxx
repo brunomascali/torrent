@@ -6,6 +6,7 @@
 #include <download/peer/peer_connection.hxx>
 #include <bencode/bencode.hxx>
 #include <cstdint>
+#include <io/file.hxx>
 #include <metainfo/metainfo.hxx>
 #include <mutex>
 
@@ -36,6 +37,7 @@ public:
 
 private:
   std::unique_ptr<const metainfo::Metainfo> m_metainfo;
+  std::vector<io::File> m_files;
   uint64_t m_uploaded{0};
   uint64_t m_downloaded{0};
   uint64_t m_left{0};
@@ -50,6 +52,7 @@ private:
   std::mutex m_mutex;
 
   std::vector<peer::Peer> fetch_peers();
+  bool open_files();
   bool peer_has_piece(const std::vector<std::byte>& bitfield, uint32_t piece_index);
 };
 

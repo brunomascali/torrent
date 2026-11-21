@@ -1,7 +1,8 @@
 find_package(GTest REQUIRED)
 
 add_executable(io_test
-    file_handle.cxx
+    file.cxx
+    tcp_connection.cxx
 )
 
 target_link_libraries(io_test

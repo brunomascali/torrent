@@ -5,7 +5,6 @@
 namespace crypto {
 
 std::array<std::byte, 20> sha1(std::span<const std::byte> bytes) {
-  logger::trace("Generating sha1 of {} bytes", bytes.size());
   boost::uuids::detail::sha1 hasher;
   hasher.process_bytes(bytes.data(), bytes.size());
 
