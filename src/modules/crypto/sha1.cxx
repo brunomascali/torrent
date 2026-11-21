@@ -1,4 +1,3 @@
-#include "logger/logger.hxx"
 #include <boost/uuid/detail/sha1.hpp>
 #include <crypto/sha1.hxx>
 
