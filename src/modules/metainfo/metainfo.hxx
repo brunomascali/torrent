@@ -18,7 +18,7 @@ public:
 
   uint64_t length() const { return m_length; }
   uint64_t piece_length() const { return m_piece_length; }
-  uint64_t num_pieces() const { return m_pieces.size() / 20; }
+  uint64_t num_pieces() const { return m_pieces.size(); }
   std::array<std::byte, 20> info_hash() const { return m_info_hash; }
   const std::vector<File>& files() const { return m_files; };
   std::span<const std::byte, 20> pieces() const;

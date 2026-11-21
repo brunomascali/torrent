@@ -99,8 +99,7 @@ asio::awaitable<void> PeerConnection::handle_msg(const Bitfield &bitfield) {
   }
 
   logger::debug("num pieces: {}", num_pieces);
-  m_bitfield = bitfield.mask;
-  m_bitfield.resize(num_pieces);
+  m_bitfield = std::move(bitfield.mask);
 
   co_await send_message(Interested{});
 }
@@ -205,7 +204,7 @@ PeerConnection::create_handshake_message(const std::string &info_hash) {
 }
 
 asio::awaitable<void> PeerConnection::fill_requests() {
-  while (m_incoming_pieces.size() < 32) {
+  while (m_incoming_pieces.size() < 64) {
     auto piece = m_download_manager_ref.reserve_piece(m_bitfield);
 
     if (!piece) break;
@@ -214,11 +213,13 @@ asio::awaitable<void> PeerConnection::fill_requests() {
       m_incoming_pieces.emplace(
         std::make_pair(*piece, IncomingPiece(*piece, 262144))
       );
-      logger::debug("Requesting piece {}", *piece);
       for (int offset = 0; offset < m_download_manager_ref.metainfo().piece_length(); offset += 16 * 1024) {
         PeerMessage request = Request(*piece, offset, 16 * 1024);
         co_await m_tcp_connection->async_write(PeerMessage::to_bytes(request));
       }
+    }
+    else if (!piece && m_download_manager_ref.download_completed()) {
+    	throw std::logic_error("Download complete. Killing peer");
     }
   }
   co_return;

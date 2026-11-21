@@ -1,4 +1,5 @@
 #include "download/peer/message.hxx"
+#include "logger/logger.hxx"
 
 #include <cstddef>
 #include <cstdint>
@@ -39,6 +40,7 @@ std::vector<bool> vec_of_bytes_to_bools(std::span<const std::byte> bytes,
   if (num_pieces) {
     bits.resize(*num_pieces);
   }
+  logger::debug("bytes to bool {}", bits.size());
   return bits;
 }
 
