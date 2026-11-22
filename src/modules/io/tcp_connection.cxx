@@ -19,6 +19,19 @@ Error net_error(std::error_code ec, std::string context) {
 TcpConnection::TcpConnection(tcp::socket socket, std::string remote)
     : m_socket(std::move(socket)), m_remote(std::move(remote)) {}
 
+TcpConnection TcpConnection::adopt(tcp::socket socket) {
+  boost::system::error_code ec;
+  const auto endpoint = socket.remote_endpoint(ec);
+  std::string remote = ec ? std::string("unknown")
+                          : std::format("{}:{}", endpoint.address().to_string(), endpoint.port());
+  return TcpConnection(std::move(socket), std::move(remote));
+}
+
+tcp::endpoint TcpConnection::remote_endpoint() const {
+  boost::system::error_code ec;
+  return m_socket.remote_endpoint(ec);
+}
+
 asio::awaitable<std::expected<TcpConnection, Error>>
 TcpConnection::connect(std::string_view ip, std::uint16_t port,
                        std::chrono::steady_clock::duration timeout) {

@@ -3,11 +3,26 @@
 #include <algorithm>
 #include <boost/asio/co_spawn.hpp>
 #include <crypto/sha1.hxx>
+#include <download/listener.hxx>
 #include <download/peer_id.hxx>
 #include <logger/logger.hxx>
 #include <thread>
 
 namespace download {
+
+namespace {
+
+constexpr std::uint16_t first_listen_port = 6881;
+constexpr std::uint16_t last_listen_port = 6889;
+constexpr std::size_t max_connections = 200;
+constexpr int max_upload_slots = 8;
+constexpr std::uint32_t max_block_length = 16 * 1024;
+
+boost::asio::awaitable<void> serve(std::shared_ptr<peer::PeerConnection> connection) {
+  co_await connection->run();
+}
+
+}
 
 std::expected<std::unique_ptr<DownloadSession>, std::string>
 DownloadSession::create(std::unique_ptr<const metainfo::Metainfo> metainfo) {
@@ -43,29 +58,33 @@ bool DownloadSession::run() {
     return false;
   }
 
+  auto listener = Listener::open(m_io_context.get_executor(), first_listen_port,
+                                 last_listen_port);
+  if (listener) {
+    m_listen_port = listener->port();
+    logger::info("Listening for peers on port {}{}", m_listen_port,
+                 listener->accepts_ipv6() ? " (IPv4 and IPv6)" : " (IPv4)");
+  } else {
+    logger::warn("Not accepting incoming peers: {}", listener.error());
+  }
+
   auto peers = announce(tracker::Event::started);
   if (peers.empty()) {
     logger::error("No peers to download from");
     return false;
   }
 
-  peer::PieceSink &sink = *this;
-  for (auto &peer : peers) {
-    auto conn = std::make_unique<peer::PeerConnection>(std::move(peer), m_identity,
-                                                       m_picker, sink);
-    auto *raw = conn.get();
-    m_peer_connections.push_back(std::move(conn));
-
-    boost::asio::co_spawn(m_io_context, raw->run(), [](std::exception_ptr e) {
-      if (!e) {
-        return;
-      }
-      try {
-        std::rethrow_exception(e);
-      } catch (const std::exception &ex) {
-        logger::warn("Peer coroutine terminated: {}", ex.what());
-      }
+  peer::Swarm &swarm = *this;
+  if (listener) {
+    Listener::start(std::move(*listener), [this](io::TcpConnection connection) {
+      peer::Swarm &self = *this;
+      spawn(std::make_shared<peer::PeerConnection>(std::move(connection), m_identity,
+                                                   m_picker, self));
     });
+  }
+  for (auto &peer : peers) {
+    spawn(std::make_shared<peer::PeerConnection>(std::move(peer), m_identity, m_picker,
+                                                 swarm));
   }
 
   std::vector<std::thread> pool;
@@ -112,6 +131,67 @@ bool DownloadSession::on_piece(std::uint32_t index, std::span<const std::byte> d
   return true;
 }
 
+void DownloadSession::spawn(std::shared_ptr<peer::PeerConnection> connection) {
+  boost::asio::co_spawn(m_io_context, serve(std::move(connection)), [](std::exception_ptr e) {
+    if (!e) {
+      return;
+    }
+    try {
+      std::rethrow_exception(e);
+    } catch (const std::exception &ex) {
+      logger::warn("Peer coroutine terminated: {}", ex.what());
+    }
+  });
+}
+
+std::optional<std::vector<std::byte>>
+DownloadSession::read_block(std::uint32_t index, std::uint32_t begin, std::uint32_t length) {
+  if (length == 0 || length > max_block_length || !m_picker.has(index)) {
+    return std::nullopt;
+  }
+  const std::uint32_t size = m_picker.layout().piece_size(index);
+  if (begin > size || length > size - begin) {
+    return std::nullopt;
+  }
+
+  std::vector<std::byte> block(length);
+  auto read = m_storage->read(m_picker.layout().piece_offset(index) + begin, block);
+  if (!read) {
+    logger::warn("Error reading piece {} for upload: {}", index, read.error().str());
+    return std::nullopt;
+  }
+  m_uploaded += length;
+  return block;
+}
+
+bool DownloadSession::admit(const peer::PeerId &peer_id) {
+  if (peer_id == m_identity.peer_id) {
+    return false;
+  }
+  std::lock_guard lock(m_peers_mutex);
+  if (m_connected.size() >= max_connections) {
+    return false;
+  }
+  return m_connected.insert(peer_id).second;
+}
+
+void DownloadSession::leave(const peer::PeerId &peer_id) {
+  std::lock_guard lock(m_peers_mutex);
+  m_connected.erase(peer_id);
+}
+
+bool DownloadSession::acquire_upload_slot() {
+  int used = m_upload_slots_used.load();
+  while (used < max_upload_slots) {
+    if (m_upload_slots_used.compare_exchange_weak(used, used + 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void DownloadSession::release_upload_slot() { --m_upload_slots_used; }
+
 bool DownloadSession::hash_matches(std::uint32_t index,
                                    std::span<const std::byte> data) const {
   auto expected = m_metainfo->piece_hash(index);
@@ -144,8 +224,8 @@ std::vector<peer::Peer> DownloadSession::announce(tracker::Event event) {
   tracker::AnnounceRequest req{
       .info_hash = m_identity.info_hash,
       .peer_id = m_identity.peer_id,
-      .port = 6881,
-      .uploaded = m_uploaded,
+      .port = m_listen_port,
+      .uploaded = m_uploaded.load(),
       .downloaded = m_downloaded.load(),
       .left = m_picker.bytes_left(),
       .event = event,

@@ -1,16 +1,12 @@
 #pragma once
 
+#include <cstdint>
 #include <download/tracker/announce.hxx>
-#include <chrono>
+#include <download/tracker/timeouts.hxx>
 #include <expected>
 #include <string>
 
 namespace download::tracker {
-
-struct TrackerTimeouts {
-  std::chrono::milliseconds connect{std::chrono::seconds(10)};
-  std::chrono::milliseconds read{std::chrono::seconds(30)};
-};
 
 class TrackerClient {
 public:
@@ -24,6 +20,7 @@ public:
 private:
   std::string m_url;
   TrackerTimeouts m_timeouts;
+  std::uint32_t m_key;
 };
 
 }

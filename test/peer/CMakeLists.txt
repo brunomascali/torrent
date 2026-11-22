@@ -2,6 +2,7 @@ find_package(GTest REQUIRED)
 
 add_executable(peer_test
     peer_connection.cxx
+    listener.cxx
 )
 
 target_link_libraries(peer_test

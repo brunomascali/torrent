@@ -17,6 +17,7 @@ struct IncomingPiece {
   uint32_t piece_length;
   std::vector<std::byte> data;
   std::vector<bool> chunk_received;
+  uint32_t next_request_offset{0};
 
   IncomingPiece(uint32_t index, uint32_t piece_length)
       : index(index), piece_length(piece_length), data(piece_length),
@@ -53,6 +54,8 @@ struct IncomingPiece {
     chunk_received[chunk] = true;
     return true;
   }
+
+  bool fully_requested() const { return next_request_offset >= piece_length; }
 
   bool all_chunks_received() const {
     return std::all_of(chunk_received.begin(), chunk_received.end(),

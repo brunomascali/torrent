@@ -79,6 +79,29 @@ bool PiecePicker::is_interesting(const std::vector<bool> &peer_has) const {
   return false;
 }
 
+bool PiecePicker::has(std::uint32_t index) const {
+  std::lock_guard lock(m_mutex);
+  return index < m_states.size() && m_states[index] == State::done;
+}
+
+std::vector<bool> PiecePicker::have_snapshot(std::size_t &cursor) const {
+  std::lock_guard lock(m_mutex);
+  std::vector<bool> mask(m_states.size());
+  for (std::size_t i = 0; i < m_states.size(); ++i) {
+    mask[i] = m_states[i] == State::done;
+  }
+  cursor = m_completion_log.size();
+  return mask;
+}
+
+std::vector<std::uint32_t> PiecePicker::completed_since(std::size_t &cursor) const {
+  std::lock_guard lock(m_mutex);
+  std::vector<std::uint32_t> fresh(m_completion_log.begin() + static_cast<std::ptrdiff_t>(cursor),
+                                   m_completion_log.end());
+  cursor = m_completion_log.size();
+  return fresh;
+}
+
 void PiecePicker::release(std::uint32_t index) {
   std::lock_guard lock(m_mutex);
   if (index < m_states.size() && m_states[index] == State::in_progress) {
@@ -92,6 +115,7 @@ void PiecePicker::complete(std::uint32_t index) {
     return;
   }
   m_states[index] = State::done;
+  m_completion_log.push_back(index);
   ++m_completed;
   m_bytes_left -= m_layout.piece_size(index);
 }

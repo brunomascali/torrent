@@ -4,8 +4,11 @@ add_library(${TARGET_NAME} STATIC
   download_session.cxx
   piece_picker.cxx
   storage.cxx
+  listener.cxx
   peer_id.cxx
   tracker/announce.cxx
+  tracker/http_tracker.cxx
+  tracker/udp_tracker.cxx
   tracker/tracker_client.cxx
   peer/peer.cxx
   peer/peer_connection.cxx

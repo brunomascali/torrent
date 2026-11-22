@@ -17,7 +17,6 @@
 #include <metainfo/metainfo.hxx>
 #include <span>
 #include <variant>
-#include <optional>
 
 namespace metainfo {
 

@@ -21,6 +21,12 @@ inline std::string url_encode(std::string_view text) {
   return url_encode(std::as_bytes(std::span(text)));
 }
 
+std::expected<std::vector<download::peer::Peer>, std::string>
+parse_compact_peers(std::span<const std::byte> bytes);
+
+std::expected<std::vector<download::peer::Peer>, std::string>
+parse_compact_peers6(std::span<const std::byte> bytes);
+
 enum class Event { none, started, completed, stopped };
 
 struct AnnounceRequest {

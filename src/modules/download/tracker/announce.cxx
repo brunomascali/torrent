@@ -46,6 +46,52 @@ std::string AnnounceRequest::query_string() const {
   return q;
 }
 
+std::expected<std::vector<download::peer::Peer>, std::string>
+parse_compact_peers(std::span<const std::byte> bytes) {
+  if (bytes.size() % 6 != 0) {
+    return std::unexpected(std::format(
+        "Invalid compact peers length: {} bytes (must be a multiple of 6)", bytes.size()));
+  }
+  std::vector<download::peer::Peer> peers;
+  peers.reserve(bytes.size() / 6);
+  for (std::size_t i = 0; i < bytes.size(); i += 6) {
+    auto b = [&](std::size_t k) { return std::to_integer<unsigned>(bytes[i + k]); };
+    peers.push_back(download::peer::Peer{
+        .peer_id = std::nullopt,
+        .ip = std::format("{}.{}.{}.{}", b(0), b(1), b(2), b(3)),
+        .port = static_cast<std::uint16_t>((b(4) << 8) | b(5)),
+    });
+  }
+  return peers;
+}
+
+std::expected<std::vector<download::peer::Peer>, std::string>
+parse_compact_peers6(std::span<const std::byte> bytes) {
+  if (bytes.size() % 18 != 0) {
+    return std::unexpected(std::format(
+        "Invalid compact IPv6 peers length: {} bytes (must be a multiple of 18)",
+        bytes.size()));
+  }
+  std::vector<download::peer::Peer> peers;
+  peers.reserve(bytes.size() / 18);
+  for (std::size_t i = 0; i < bytes.size(); i += 18) {
+    auto b = [&](std::size_t k) { return std::to_integer<unsigned>(bytes[i + k]); };
+    std::string ip;
+    for (std::size_t g = 0; g < 8; ++g) {
+      if (g > 0) {
+        ip += ':';
+      }
+      ip += std::format("{:x}", (b(g * 2) << 8) | b(g * 2 + 1));
+    }
+    peers.push_back(download::peer::Peer{
+        .peer_id = std::nullopt,
+        .ip = std::move(ip),
+        .port = static_cast<std::uint16_t>((b(16) << 8) | b(17)),
+    });
+  }
+  return peers;
+}
+
 std::string url_encode(std::span<const std::byte> data) {
   std::string encoded;
   encoded.reserve(data.size() * 3);
@@ -122,24 +168,11 @@ AnnounceResponse::from_bencode(const bencode::Value& value) {
 
   if (std::holds_alternative<bencode::ByteString>(peers_it->second.data)) {
     const auto& compact_peers = std::get<bencode::ByteString>(peers_it->second.data);
-    if (compact_peers.size() % 6 != 0) {
-      return std::unexpected(std::format(
-          "Invalid compact peers length: {} bytes (must be a multiple of 6)",
-          compact_peers.size()));
+    auto peers = parse_compact_peers(std::as_bytes(std::span(compact_peers)));
+    if (!peers) {
+      return std::unexpected(peers.error());
     }
-
-    size_t num_peers = compact_peers.size() / 6;
-    success.peers.reserve(num_peers);
-    for (size_t i = 0; i < num_peers; ++i) {
-      const auto* p = reinterpret_cast<const uint8_t*>(compact_peers.data() + i * 6);
-      std::string ip = std::format("{}.{}.{}.{}", p[0], p[1], p[2], p[3]);
-      uint16_t port = (static_cast<uint16_t>(p[4]) << 8) | static_cast<uint16_t>(p[5]);
-      success.peers.push_back(download::peer::Peer{
-        .peer_id = std::nullopt,
-        .ip = std::move(ip),
-        .port = port,
-      });
-    }
+    success.peers = std::move(*peers);
   } else if (std::holds_alternative<bencode::List>(peers_it->second.data)) {
     const auto& peer_list = std::get<bencode::List>(peers_it->second.data);
     success.peers.reserve(peer_list.size());
@@ -211,23 +244,8 @@ AnnounceResponse::from_bencode(const bencode::Value& value) {
   if (auto it = dict.find("peers6"); it != dict.end()) {
     if (std::holds_alternative<bencode::ByteString>(it->second.data)) {
       const auto& compact_ipv6 = std::get<bencode::ByteString>(it->second.data);
-      if (compact_ipv6.size() % 18 == 0) {
-        size_t num_ipv6 = compact_ipv6.size() / 18;
-        for (size_t i = 0; i < num_ipv6; ++i) {
-          const auto* p = reinterpret_cast<const uint8_t*>(compact_ipv6.data() + i * 18);
-          std::string ip;
-          for (size_t g = 0; g < 8; ++g) {
-            uint16_t group = (static_cast<uint16_t>(p[g * 2]) << 8) | static_cast<uint16_t>(p[g * 2 + 1]);
-            if (g > 0) ip += ':';
-            ip += std::format("{:x}", group);
-          }
-          uint16_t port = (static_cast<uint16_t>(p[16]) << 8) | static_cast<uint16_t>(p[17]);
-          success.peers.push_back(download::peer::Peer{
-            .peer_id = std::nullopt,
-            .ip = std::move(ip),
-            .port = port,
-          });
-        }
+      if (auto peers6 = parse_compact_peers6(std::as_bytes(std::span(compact_ipv6)))) {
+        success.peers.insert(success.peers.end(), peers6->begin(), peers6->end());
       }
     }
   }

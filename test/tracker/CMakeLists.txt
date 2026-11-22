@@ -3,6 +3,7 @@ find_package(GTest REQUIRED)
 add_executable(tracker_test
     announce.cxx
     tracker_client.cxx
+    udp_tracker.cxx
 )
 
 target_link_libraries(tracker_test

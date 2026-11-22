@@ -7,12 +7,14 @@
 #include <cstdint>
 #include <download/peer/peer.hxx>
 #include <download/peer/peer_connection.hxx>
-#include <download/peer/piece_sink.hxx>
+#include <download/peer/swarm.hxx>
 #include <download/piece_picker.hxx>
 #include <download/storage.hxx>
 #include <download/tracker/tracker_client.hxx>
 #include <expected>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <metainfo/metainfo.hxx>
 #include <optional>
 #include <span>
@@ -21,7 +23,7 @@
 
 namespace download {
 
-class DownloadSession : private peer::PieceSink {
+class DownloadSession : private peer::Swarm {
 public:
   static std::expected<std::unique_ptr<DownloadSession>, std::string>
   create(std::unique_ptr<const metainfo::Metainfo> metainfo);
@@ -37,6 +39,14 @@ private:
                   PieceLayout layout);
 
   bool on_piece(std::uint32_t index, std::span<const std::byte> data) override;
+  std::optional<std::vector<std::byte>>
+  read_block(std::uint32_t index, std::uint32_t begin, std::uint32_t length) override;
+  bool admit(const peer::PeerId &peer_id) override;
+  void leave(const peer::PeerId &peer_id) override;
+  bool acquire_upload_slot() override;
+  void release_upload_slot() override;
+
+  void spawn(std::shared_ptr<peer::PeerConnection> connection);
 
   bool open_storage();
   std::vector<peer::Peer> announce(tracker::Event event);
@@ -48,8 +58,13 @@ private:
   peer::Identity m_identity;
   std::optional<Storage> m_storage;
   std::atomic<std::uint64_t> m_downloaded{0};
-  std::uint64_t m_uploaded{0};
-  std::vector<std::unique_ptr<peer::PeerConnection>> m_peer_connections;
+  std::atomic<std::uint64_t> m_uploaded{0};
+  std::uint16_t m_listen_port{6881};
+
+  std::mutex m_peers_mutex;
+  std::set<peer::PeerId> m_connected;
+  std::atomic<int> m_upload_slots_used{0};
+
   boost::asio::io_context m_io_context;
 };
 

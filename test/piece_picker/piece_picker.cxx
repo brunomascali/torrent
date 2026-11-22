@@ -146,3 +146,30 @@ TEST(PiecePicker, InterestingWhenPeerHasAPieceNotDone) {
   EXPECT_FALSE(picker.is_interesting({false, true, false}));
   EXPECT_FALSE(picker.is_interesting(all(2)));
 }
+
+TEST(PiecePicker, HasReportsOnlyDonePieces) {
+  PiecePicker picker(small_layout());
+  auto p = picker.reserve({true, false, false});
+  EXPECT_FALSE(picker.has(*p));
+  picker.complete(*p);
+  EXPECT_TRUE(picker.has(*p));
+  EXPECT_FALSE(picker.has(1));
+  EXPECT_FALSE(picker.has(99));
+}
+
+TEST(PiecePicker, SnapshotAndCompletionLogNeverMissOrRepeatAPiece) {
+  PiecePicker picker(small_layout());
+  picker.complete(2);
+
+  std::size_t cursor = 0;
+  EXPECT_EQ(picker.have_snapshot(cursor), (std::vector<bool>{false, false, true}));
+  EXPECT_TRUE(picker.completed_since(cursor).empty());
+
+  picker.complete(0);
+  picker.complete(1);
+  EXPECT_EQ(picker.completed_since(cursor), (std::vector<std::uint32_t>{0, 1}));
+  EXPECT_TRUE(picker.completed_since(cursor).empty());
+
+  std::size_t other = 0;
+  EXPECT_EQ(picker.completed_since(other), (std::vector<std::uint32_t>{2, 0, 1}));
+}

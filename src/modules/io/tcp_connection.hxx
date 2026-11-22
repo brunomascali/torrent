@@ -25,6 +25,8 @@ public:
   connect(std::string_view ip, std::uint16_t port,
           std::chrono::steady_clock::duration timeout = std::chrono::seconds(5));
 
+  static TcpConnection adopt(tcp::socket socket);
+
   TcpConnection(TcpConnection &&) noexcept = default;
   TcpConnection &operator=(TcpConnection &&) noexcept = default;
   TcpConnection(const TcpConnection &) = delete;
@@ -33,6 +35,9 @@ public:
   asio::awaitable<std::expected<void, Error>> async_write(std::span<const std::byte> bytes);
   asio::awaitable<std::expected<void, Error>> async_read_exact(std::span<std::byte> buffer);
   asio::awaitable<std::expected<std::vector<std::byte>, Error>> async_read_exact(std::size_t n);
+
+  tcp::endpoint remote_endpoint() const;
+  const std::string &remote() const noexcept { return m_remote; }
 
 private:
   TcpConnection(tcp::socket socket, std::string remote);

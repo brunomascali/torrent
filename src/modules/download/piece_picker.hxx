@@ -44,6 +44,10 @@ public:
 
   bool is_interesting(const std::vector<bool> &peer_has) const;
 
+  bool has(std::uint32_t index) const;
+  std::vector<bool> have_snapshot(std::size_t &cursor) const;
+  std::vector<std::uint32_t> completed_since(std::size_t &cursor) const;
+
   void release(std::uint32_t index);
 
   void complete(std::uint32_t index);
@@ -58,6 +62,7 @@ private:
   PieceLayout m_layout;
   mutable std::mutex m_mutex;
   std::vector<State> m_states;
+  std::vector<std::uint32_t> m_completion_log;
   std::size_t m_completed{0};
   std::uint64_t m_bytes_left;
 };
