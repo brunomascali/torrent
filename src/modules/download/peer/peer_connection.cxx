@@ -222,6 +222,7 @@ boost::asio::awaitable<void> PeerConnection::handle_msg(const wire::Piece &piece
   if (!it->second.add_chunk(piece.begin, piece.block)) {
     co_return;
   }
+  m_swarm.on_block_received(piece.block.size());
   if (m_outstanding_requests > 0) {
     --m_outstanding_requests;
   }

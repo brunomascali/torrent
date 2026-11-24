@@ -9,7 +9,6 @@
 #include <boost/uuid/detail/sha1.hpp>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -90,38 +89,40 @@ std::expected<Metainfo, Error> Metainfo::parse(std::span<const std::byte> torren
 
   auto bencode = bencode::decode(torrent_bytes);
   if (!bencode) {
-    logger::error("Error decoding metainfo", bencode.error().str());
-    exit(1);
+    return std::unexpected(invalid(std::format("not valid bencode: {}", bencode.error().str())));
   }
 
-  bencode::Dict* root_dict = std::get_if<bencode::Dict>(&bencode.value().data);
+  const auto *root_dict = std::get_if<bencode::Dict>(&bencode->data);
   if (!root_dict) {
-    logger::error("Metainfo file is not a dictionary", bencode.error().str());
-    exit(1);
+    return std::unexpected(invalid("top level is not a dictionary"));
   }
 
-  bencode::Dict* info_dict = std::get_if<bencode::Dict>(&(root_dict->at("info").data));
+  auto info_it = root_dict->find("info");
+  if (info_it == root_dict->end()) {
+    return std::unexpected(Error(MetainfoErrorCode::missing_key, "info"));
+  }
+  const bencode::Value &info_value = info_it->second;
+  const auto *info_dict = std::get_if<bencode::Dict>(&info_value.data);
   if (!info_dict) {
-    logger::error("Metainfo file does not have a 'info' dictionary", bencode.error().str());
-    exit(1);
+    return std::unexpected(invalid("info is not a dictionary"));
   }
 
   auto piece_length = bencode::get<bencode::Integer>(*info_dict, "piece length");
   if (!piece_length) {
-    logger::error("Metainfo file does not have a 'info.piece length' integer (could be a multiple files download)", bencode.error().str());
-    exit(1);
+    return std::unexpected(Error(MetainfoErrorCode::missing_key, "info.piece length"));
+  }
+  if (*piece_length <= 0) {
+    return std::unexpected(invalid("info.piece length must be positive"));
   }
   m.m_piece_length = *piece_length;
 
   auto pieces = bencode::get<bencode::ByteString>(*info_dict, "pieces");
   if (!pieces) {
-    logger::error("Metainfo file does not have a 'info.pieces' integer", bencode.error().str());
-    exit(1);
+    return std::unexpected(Error(MetainfoErrorCode::missing_key, "info.pieces"));
   }
   std::string_view pieces_view = pieces.value().get();
-  if (pieces_view.size() % 20 != 0) {
-    logger::error("Pieces length is not a multiple of 20", bencode.error().str());
-    exit(1);
+  if (pieces_view.empty() || pieces_view.size() % 20 != 0) {
+    return std::unexpected(invalid("info.pieces length is not a positive multiple of 20"));
   }
   m.m_pieces.reserve(pieces_view.size() / 20);
 
@@ -134,14 +135,12 @@ std::expected<Metainfo, Error> Metainfo::parse(std::span<const std::byte> torren
 
   auto trackers = bencode::get<bencode::ByteString>(*root_dict, "announce");
   if (!trackers) {
-    logger::error("Metainfo file does not have a 'announce' field", bencode.error().str());
-    exit(1);
+    return std::unexpected(Error(MetainfoErrorCode::missing_key, "announce"));
   }
   m.m_announce_urls = {std::string(*trackers)};
 
-  const bencode::Value v = root_dict->at("info");
-  logger::trace("{} -> {}", v.start, v.end);
-  m.m_info_hash = crypto::sha1({torrent_bytes.begin() + v.start, torrent_bytes.begin() + v.end + 1});
+  m.m_info_hash = crypto::sha1({torrent_bytes.begin() + info_value.start,
+                                torrent_bytes.begin() + info_value.end + 1});
 
   auto files = extract_files(*info_dict);
   if (!files) {

@@ -33,7 +33,7 @@ public:
     return std::format("[{}] {} ({})", module(), to_string(code), detail);
   }
 
-  constexpr std::string module() const override { return "bencode"; }
+  constexpr std::string module() const override { return "metainfo"; }
 };
 
 }

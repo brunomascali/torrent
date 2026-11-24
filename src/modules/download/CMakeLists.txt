@@ -5,6 +5,7 @@ add_library(${TARGET_NAME} STATIC
   piece_picker.cxx
   storage.cxx
   listener.cxx
+  transfer_rate.cxx
   peer_id.cxx
   tracker/announce.cxx
   tracker/http_tracker.cxx

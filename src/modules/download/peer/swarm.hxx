@@ -15,6 +15,7 @@ class Swarm {
 public:
   virtual ~Swarm() = default;
 
+  virtual void on_block_received(std::size_t bytes) = 0;
   virtual bool on_piece(std::uint32_t index, std::span<const std::byte> data) = 0;
 
   virtual std::optional<std::vector<std::byte>>

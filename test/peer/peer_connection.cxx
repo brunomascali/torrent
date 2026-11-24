@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <boost/asio.hpp>
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <memory>
@@ -43,8 +44,11 @@ struct FakeSwarm : Swarm {
   bool upload_slots = true;
   int slots_held = 0;
   int admitted = 0;
+  std::atomic<std::size_t> received_bytes{0};
 
   explicit FakeSwarm(PiecePicker &p) : picker(p) {}
+
+  void on_block_received(std::size_t bytes) override { received_bytes += bytes; }
 
   bool on_piece(std::uint32_t index, std::span<const std::byte> data) override {
     std::lock_guard lock(mutex);
@@ -206,6 +210,7 @@ TEST(PeerConnection, DownloadsAllPiecesFromPeerThatOnlySendsHave) {
   EXPECT_TRUE(std::ranges::equal(h.sink.pieces[0], std::span(data).first(piece_length)));
   EXPECT_TRUE(std::ranges::equal(h.sink.pieces[1], std::span(data).subspan(piece_length)));
   EXPECT_TRUE(h.picker.is_complete());
+  EXPECT_EQ(h.sink.received_bytes, data.size());
 }
 
 TEST(PeerConnection, DoesNotRequestWhileChoked) {

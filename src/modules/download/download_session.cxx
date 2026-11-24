@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/this_coro.hpp>
+#include <boost/asio/use_awaitable.hpp>
 #include <crypto/sha1.hxx>
 #include <download/listener.hxx>
 #include <download/peer_id.hxx>
@@ -17,11 +21,38 @@ constexpr std::uint16_t last_listen_port = 6889;
 constexpr std::size_t max_connections = 200;
 constexpr int max_upload_slots = 8;
 constexpr std::uint32_t max_block_length = 16 * 1024;
+constexpr std::chrono::seconds progress_interval{1};
 
 boost::asio::awaitable<void> serve(std::shared_ptr<peer::PeerConnection> connection) {
   co_await connection->run();
 }
 
+}
+
+double TransferStats::progress() const noexcept {
+  if (total_pieces == 0) {
+    return 0.0;
+  }
+  return static_cast<double>(completed_pieces) / static_cast<double>(total_pieces);
+}
+
+std::optional<std::chrono::seconds> TransferStats::eta() const noexcept {
+  if (bytes_left == 0) {
+    return std::chrono::seconds{0};
+  }
+  if (download_rate < 1.0) {
+    return std::nullopt;
+  }
+  return std::chrono::seconds{
+      static_cast<std::int64_t>(static_cast<double>(bytes_left) / download_rate)};
+}
+
+std::string describe(const TransferStats &stats) {
+  const auto eta = stats.eta();
+  return std::format("{:5.1f}% ({}/{} pieces) | down {} | up {} | {} peers | ETA {}",
+                     stats.progress() * 100.0, stats.completed_pieces, stats.total_pieces,
+                     format_rate(stats.download_rate), format_rate(stats.upload_rate),
+                     stats.peers, eta ? std::format("{:%T}", *eta) : std::string("--:--:--"));
 }
 
 std::expected<std::unique_ptr<DownloadSession>, std::string>
@@ -87,6 +118,8 @@ bool DownloadSession::run() {
                                                  swarm));
   }
 
+  boost::asio::co_spawn(m_io_context, report_progress(), boost::asio::detached);
+
   std::vector<std::thread> pool;
   const unsigned n = std::max(1u, std::thread::hardware_concurrency());
   for (unsigned i = 0; i < n; ++i) {
@@ -94,6 +127,10 @@ bool DownloadSession::run() {
   }
   for (auto &t : pool) {
     t.join();
+  }
+
+  if (m_progress_handler) {
+    m_progress_handler(stats());
   }
 
   if (m_picker.is_complete()) {
@@ -122,13 +159,52 @@ bool DownloadSession::on_piece(std::uint32_t index, std::span<const std::byte> d
 
   m_picker.complete(index);
   m_downloaded += data.size();
-  logger::info("Progress: {}/{}", m_picker.completed_count(),
-               m_picker.layout().num_pieces());
+  logger::debug("Piece {} done ({}/{})", index, m_picker.completed_count(),
+                m_picker.layout().num_pieces());
 
   if (m_picker.is_complete()) {
     m_io_context.stop();
   }
   return true;
+}
+
+void DownloadSession::on_block_received(std::size_t bytes) { m_download_rate.add(bytes); }
+
+TransferStats DownloadSession::stats() const {
+  std::size_t peers = 0;
+  {
+    std::lock_guard lock(m_peers_mutex);
+    peers = m_connected.size();
+  }
+  const auto now = TransferRate::Clock::now();
+  return TransferStats{
+      .downloaded = m_downloaded.load(),
+      .uploaded = m_uploaded.load(),
+      .download_rate = m_download_rate.bytes_per_second(now),
+      .upload_rate = m_upload_rate.bytes_per_second(now),
+      .completed_pieces = m_picker.completed_count(),
+      .total_pieces = m_picker.layout().num_pieces(),
+      .bytes_left = m_picker.bytes_left(),
+      .peers = peers,
+  };
+}
+
+boost::asio::awaitable<void> DownloadSession::report_progress() {
+  boost::asio::steady_timer timer(co_await boost::asio::this_coro::executor);
+  for (;;) {
+    timer.expires_after(progress_interval);
+    co_await timer.async_wait(boost::asio::use_awaitable);
+
+    const auto current = stats();
+    logger::debug("{}", describe(current));
+    if (m_progress_handler) {
+      m_progress_handler(current);
+    }
+  }
+}
+
+void DownloadSession::set_progress_handler(ProgressHandler handler) {
+  m_progress_handler = std::move(handler);
 }
 
 void DownloadSession::spawn(std::shared_ptr<peer::PeerConnection> connection) {
@@ -161,6 +237,7 @@ DownloadSession::read_block(std::uint32_t index, std::uint32_t begin, std::uint3
     return std::nullopt;
   }
   m_uploaded += length;
+  m_upload_rate.add(length);
   return block;
 }
 
